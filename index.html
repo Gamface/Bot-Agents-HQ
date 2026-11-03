@@ -136,7 +136,7 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
       <kbd>⌘K</kbd>
       <div id="results" class="results" hidden></div>
     </div>
-    <div class="status"><span class="dot pulse"></span><span id="statusText">All systems online</span></div>
+    <div class="status"><span class="dot pulse"></span><span id="statusText">Starting…</span></div>
     <button class="icon-btn" data-act="openSettings" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </div>
 </header>
@@ -162,7 +162,7 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
     <div class="flex" style="flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--line)">
       <button class="btn sm" type="button" data-act="resetSample">Reload sample data</button>
       <button class="btn sm" type="button" data-act="clearAll">Start empty</button>
-      <span class="small muted">Data is saved in this browser only.</span>
+      <span class="small muted" id="storageNote">Data is saved in this browser only.</span>
     </div>
   </form>
 </dialog>
@@ -327,8 +327,61 @@ function emptyState() {
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || S.v !== 1) S = seed();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save — browser storage is full or blocked.'); } };
-save();
+/* storage: browser always; plus ./data on this computer when served by server.js */
+let SERVER = false, pushTimer = null, pendingRender = false;
+const save = () => {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!SERVER) toast('Could not save — browser storage is full or blocked.'); }
+  if (SERVER) { clearTimeout(pushTimer); pushTimer = setTimeout(pushState, 400); }
+};
+function setStatus(text, warn) {
+  const t = document.getElementById('statusText'); if (t) t.textContent = text;
+  const d = document.querySelector('.status .dot'); if (d) d.style.background = warn ? 'var(--warn)' : '';
+  const n = document.getElementById('storageNote'); if (n) n.textContent = SERVER ? 'Data is saved on this computer in the data folder, with hourly backups.' : 'Data is saved in this browser only.';
+}
+async function pushState() {
+  try {
+    const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S) });
+    if (!r.ok) throw new Error(r.status);
+    setStatus('Saved to this computer');
+  } catch (e) { setStatus('Server unreachable — saving in browser', true); }
+}
+const findAgent = n => { const x = String(n || '').toLowerCase(); return S.agents.find(a => a.id === x || a.name.toLowerCase() === x); };
+function applyEvent(e) {
+  const who = e.who || e.agent || 'Agent';
+  switch (e.type) {
+    case 'activity': log(who, e.what || ''); break;
+    case 'agent': {
+      let a = findAgent(e.agent);
+      if (!a) { if (!e.agent) break; a = { id: String(e.agent).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: String(e.agent), role: e.role || 'Agent', status: 'Online', model: e.model || '', last: Date.now(), desc: e.desc || '', caps: e.caps || [], session: null, log: [] }; S.agents.push(a); log(a.name, 'joined as a coworker'); }
+      ['status', 'role', 'model', 'desc'].forEach(k => { if (e[k]) a[k] = e[k]; });
+      if (Array.isArray(e.caps)) a.caps = e.caps;
+      if (e.session) a.session = { url: '', title: '', target: '', block: 0, steps: [], cur: 0, ...(a.session || {}), ...e.session };
+      if (e.log) { a.log.unshift({ t: Date.now(), x: String(e.log) }); log(a.name, String(e.log)); }
+      a.last = Date.now(); break;
+    }
+    case 'intel': S.intel.unshift({ id: uid(), title: e.title || 'Untitled', summary: e.summary || '', source: e.source || who, cat: e.cat || 'AI News', imp: ['hot', 'notable', 'ref'].includes(e.imp) ? e.imp : 'notable', date: Date.now() }); break;
+    case 'approval': S.approvals.push({ id: uid(), ref: e.ref || null, who, what: e.what || '', rule: e.rule || 'ask first', state: 'pending' }); toast(who + ' is asking for approval'); break;
+    case 'action': S.actionLog.unshift({ t: Date.now(), outcome: ['ALLOW', 'ASK', 'REFUSE'].includes(e.outcome) ? e.outcome : 'ALLOW', who, what: e.what || '' }); break;
+    case 'priority': if (e.text) S.priorities.push({ id: uid(), text: e.text, tag: String(e.tag || 'GENERAL').toUpperCase(), done: false }); break;
+    case 'meeting': { const st = new Date(e.start).getTime(); if (e.title && !isNaN(st)) S.meetings.push({ id: uid(), title: e.title, start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Zoom', attendees: e.attendees || '—', agenda: (e.agenda || []).map(t => ({ id: uid(), text: t, done: false })), notes: e.notes || '', actions: [] }); break; }
+    case 'note': if (e.body) S.notes.unshift({ id: uid(), saved: Date.now(), body: String(e.body) }); break;
+  }
+}
+const safeToRender = () => { const a = document.activeElement; return !a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && !a.value && a.type !== 'file'); };
+setInterval(() => { if (pendingRender && safeToRender()) { pendingRender = false; render(); } }, 1500);
+async function pollEvents() {
+  try {
+    const r = await fetch('/api/events?after=' + (S.lastEventId || 0));
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (d.events.length) {
+      d.events.forEach(ev => { try { applyEvent(ev); } catch (err) { console.warn('Skipped event', ev, err); } });
+      S.lastEventId = d.lastEventId; save();
+      if (safeToRender()) render(); else pendingRender = true;
+    } else if (d.lastEventId < (S.lastEventId || 0)) { S.lastEventId = d.lastEventId; save(); }
+    setStatus('Saved to this computer');
+  } catch (e) { setStatus('Server unreachable — saving in browser', true); }
+}
 const ui = { cat: 'All', imp: 'all', clientFilter: 'All', agent: 'scout', control: null, paused: {}, meetingOpen: null, editingProject: null, addingProject: false,
   noteId: null, noteMode: 'edit', calOffset: 0 };
 const log = (who, what) => { S.activity.unshift({ t: Date.now(), who, what }); S.activity = S.activity.slice(0, 60); };
@@ -806,8 +859,8 @@ const A = {
   saveSettings(el, e) { e.preventDefault(); const f = fields($('#settingsForm')); S.settings.name = f.userName.value.trim(); S.settings.goalMrr = Math.max(1, Number(f.goalMrr.value) || 1); S.settings.goalDate = f.goalDate.value || S.settings.goalDate; S.settings.accent = ui.tmpAccent || S.settings.accent; applyAccent(); save(); $('#settings').close(); render(); toast('Settings saved'); },
   pickSwatch(el) { ui.tmpAccent = el.dataset.v; renderSwatches(); document.documentElement.style.setProperty('--accent', ui.tmpAccent); },
   exportData() { const b = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'mission-control-backup-' + isoDay(new Date()) + '.json'; a.click(); URL.revokeObjectURL(a.href); },
-  resetSample() { if (!confirm('Replace everything with the sample data?')) return; S = seed(); save(); applyAccent(); $('#settings').close(); render(); toast('Sample data loaded'); },
-  clearAll() { if (!confirm('Clear all data and start empty? Export a backup first if you want to keep it.')) return; const keep = S.settings; S = emptyState(); S.settings = keep; save(); $('#settings').close(); render(); toast('Started fresh'); },
+  resetSample() { if (!confirm('Replace everything with the sample data?')) return; const le = S.lastEventId; S = seed(); S.lastEventId = le; save(); applyAccent(); $('#settings').close(); render(); toast('Sample data loaded'); },
+  clearAll() { if (!confirm('Clear all data and start empty? Export a backup first if you want to keep it.')) return; const keep = S.settings, le = S.lastEventId; S = emptyState(); S.settings = keep; S.lastEventId = le; save(); $('#settings').close(); render(); toast('Started fresh'); },
   delPriority(el) { S.priorities = S.priorities.filter(p => p.id !== el.dataset.id); save(); render(); },
   toggleAddProject() { ui.addingProject = !ui.addingProject; render(); if (ui.addingProject) $('#projTitle')?.focus(); },
   editProject(el) { ui.editingProject = el.dataset.id; render(); },
@@ -938,8 +991,24 @@ setInterval(() => {
   if (arch !== lastArchived) { lastArchived = arch; const a = document.activeElement; if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render(); }
 }, 20000);
 
-applyAccent();
-render();
+async function boot() {
+  applyAccent(); render();
+  if (!/^https?:$/.test(location.protocol)) { setStatus('Saved in this browser'); return; }
+  try {
+    const m = await fetch('/api/meta', { cache: 'no-store' });
+    const meta = m.ok ? await m.json() : null;
+    if (!meta || !meta.ok) throw new Error('no server');
+    SERVER = true;
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    const d = r.ok ? await r.json() : null;
+    if (d && d.v === 1) { S = d; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyAccent(); render(); }
+    else await pushState(); // first run: this computer gets the data you see now
+    setStatus('Saved to this computer');
+    await pollEvents();
+    setInterval(pollEvents, 5000);
+  } catch (e) { SERVER = false; setStatus('Saved in this browser'); }
+}
+boot();
 })();
 </script>
 </body>

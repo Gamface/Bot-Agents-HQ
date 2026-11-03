@@ -1,0 +1,4 @@
+# Your dashboard data and backups stay on your computer
+data/
+node_modules/
+.DS_Store
