@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{ color-scheme:dark;
+  --bg:#0B0D12; --bg2:#10131A; --panel:#141821;
+  --card:rgba(255,255,255,0.035); --card2:rgba(255,255,255,0.025);
+  --line:rgba(255,255,255,0.08); --line2:rgba(255,255,255,0.14);
+  --text:#E8EAF0; --text2:#D5DAE3; --muted:#B4BCC9; --dim:#A3ACBA; --faint:#7D8696;
+  --accent:#2DD4BF; --accent-soft:rgba(45,212,191,0.14); --accent-wash:rgba(45,212,191,0.06); --accent-line:rgba(45,212,191,0.4); --on-accent:#04211D;
+  --warn:#F5B454; --warn-soft:rgba(245,180,84,0.15); --info:#93C5FD; --info-soft:rgba(96,165,250,0.15); --bad:#F59E8B;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Montserrat,system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:var(--text);text-decoration:none}a:hover{color:#fff}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer}
+input::placeholder,textarea::placeholder{color:var(--faint)}
+select option{background:var(--panel);color:var(--text)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@keyframes pulse{0%{box-shadow:0 0 0 0 var(--accent-line)}70%{box-shadow:0 0 0 8px rgba(0,0,0,0)}100%{box-shadow:0 0 0 0 rgba(0,0,0,0)}}
+@keyframes up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex:0 0 auto}
+.pulse{animation:pulse 2s infinite}
+.fade>*{animation:up .35s ease both}
+
+/* header */
+header.top{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:14px 26px;padding:14px 28px;border-bottom:1px solid var(--line);background:rgba(16,19,26,.82);backdrop-filter:blur(16px)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.12em;font-size:13px}
+.logo{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center}
+nav.tabs{display:flex;flex-wrap:wrap;gap:2px}
+nav.tabs a{padding:8px 12px;border-radius:8px;font-weight:500;font-size:13px;color:var(--muted)}
+nav.tabs a.on{font-weight:600;background:var(--accent-soft);color:var(--accent)}
+.top-right{flex:1 1 240px;display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap}
+.search{position:relative;flex:0 1 300px;min-width:200px}
+.search input{width:100%;height:40px;padding:0 52px 0 36px;border-radius:10px;border:1px solid var(--line2);background:rgba(255,255,255,.04);font-size:13px}
+.search svg{position:absolute;left:12px;top:12px}
+.search kbd{position:absolute;right:10px;top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);border:1px solid var(--line2);border-radius:5px;padding:1px 6px}
+.results{position:absolute;top:46px;left:0;right:0;max-height:380px;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:6px;box-shadow:0 20px 60px rgba(0,0,0,.5);z-index:30}
+.results button{display:flex;width:100%;gap:10px;align-items:center;text-align:left;padding:10px;border:0;border-radius:8px;background:transparent}
+.results button:hover,.results button.hl{background:rgba(255,255,255,.07)}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+.icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line2);background:transparent;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+
+/* layout */
+main{max-width:1600px;margin:0 auto;padding:28px;display:flex;flex-direction:column;gap:22px}
+.row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.grow{flex:999 1 560px;min-width:0}
+.side{flex:1 1 340px;min-width:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--min,260px),1fr));gap:16px}
+.stack{display:flex;flex-direction:column;gap:var(--gap,12px)}
+.between{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.flex{display:flex;align-items:center;gap:var(--gap,10px)}
+.card{padding:22px;border-radius:16px;border:1px solid var(--line);background:var(--card);min-width:0}
+.card.tight{padding:16px}
+.card.hl{border-color:var(--accent-line);background:var(--accent-wash)}
+.sub{padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--panel)}
+.eyebrow{margin:0;font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.04em;text-transform:uppercase}
+.label{margin:0;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+h1{margin:4px 0 0;font-size:30px;font-weight:700;letter-spacing:-.01em}
+h2{margin:0;font-size:16px;font-weight:700}
+h3{margin:0;font-size:15px;font-weight:600}
+p{margin:0}
+.muted{color:var(--dim)} .mono{font-family:var(--mono)} .small{font-size:12px} .strong{font-weight:600}
+.link{font-size:12px;font-weight:600;color:var(--accent)}
+ul.clean,ol.clean{list-style:none;margin:0;padding:0}
+
+/* controls */
+.btn{height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--line2);background:transparent;font-weight:600;font-size:13px;color:var(--text);display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.05)}
+.btn.primary{border:0;background:var(--accent);color:var(--on-accent);font-weight:700}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.sm{height:32px;padding:0 10px;font-size:12px;border-radius:8px}
+.btn.icon{width:36px;padding:0}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.input,select.input,textarea.input{height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:rgba(0,0,0,.25);width:100%;min-width:0}
+textarea.input{height:auto;min-height:90px;padding:10px 12px;line-height:1.6;resize:vertical}
+.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--dim);min-width:0}
+.field .input{font-weight:400;color:var(--text);font-size:14px}
+.form-row{display:flex;gap:8px;flex-wrap:wrap}
+.form-row>.input{flex:1 1 160px}
+.check{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:10px;background:rgba(255,255,255,.025);cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex:0 0 auto}
+.check .t{flex:1}
+.check.done .t{color:var(--faint);text-decoration:line-through}
+.seg{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:10px;background:rgba(255,255,255,.05)}
+.seg button{height:34px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--dim);font-size:12px;font-weight:600}
+.seg button.on{background:rgba(255,255,255,.12);color:#fff}
+.tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.08em;white-space:nowrap;background:rgba(255,255,255,.08);color:var(--muted)}
+.tag.accent{background:var(--accent-soft);color:var(--accent)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.info{background:var(--info-soft);color:var(--info)}
+.tag.bad{background:rgba(245,158,139,.15);color:var(--bad)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:600}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.x{width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--faint);font-size:16px;flex:0 0 auto}
+.x:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.empty{padding:28px;border-radius:14px;border:1px dashed var(--line2);text-align:center;color:var(--dim)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;letter-spacing:.1em;color:var(--dim);font-weight:700;padding:8px 12px 10px 0}
+td{padding:12px 12px 12px 0;border-top:1px solid rgba(255,255,255,.06);vertical-align:middle}
+.scroll-x{overflow-x:auto}
+.metric{position:relative;overflow:hidden}
+.metric::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--accent)}
+.metric .v{font-size:32px;font-weight:700;letter-spacing:-.02em;margin-top:10px}
+.glyph{width:32px;height:32px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px}
+.avatar{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto}
+.feed li{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.feed .time{flex:0 0 56px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.col{padding:14px;border-radius:16px;border:1px solid var(--line);background:var(--card2);display:flex;flex-direction:column;gap:10px;min-height:320px}
+.kcard{padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:8px}
+dialog{border:1px solid var(--line2);border-radius:16px;background:var(--bg2);color:var(--text);padding:0;width:min(560px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line2);padding:10px 16px;border-radius:10px;z-index:50;font-size:13px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+@media (max-width:640px){main{padding:16px}header.top{padding:12px 16px}h1{font-size:24px}.card{padding:16px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#dashboard"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#04211D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg></span>MISSION CONTROL</a>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+  <div class="top-right">
+    <div class="search">
+      <label class="sr" for="q">Search</label>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7D8696" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search everything" autocomplete="off">
+      <kbd>⌘K</kbd>
+      <div id="results" class="results" hidden></div>
+    </div>
+    <div class="status"><span class="dot pulse"></span><span id="statusText">All systems online</span></div>
+    <button class="icon-btn" data-act="openSettings" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </div>
+</header>
+
+<main id="view" class="fade"></main>
+
+<dialog id="settings" aria-labelledby="settingsTitle">
+  <form method="dialog" id="settingsForm" style="padding:24px;display:flex;flex-direction:column;gap:14px">
+    <div class="between"><h2 id="settingsTitle">Settings</h2><button class="x" value="cancel" aria-label="Close">×</button></div>
+    <label class="field">Your name<input class="input" name="userName"></label>
+    <div class="field">Accent color
+      <div class="flex" id="swatches"></div>
+    </div>
+    <div class="grid" style="--min:180px">
+      <label class="field">Monthly revenue goal ($)<input class="input" name="goalMrr" type="number" min="1" step="100"></label>
+      <label class="field">Goal date<input class="input" name="goalDate" type="date"></label>
+    </div>
+    <div class="flex" style="flex-wrap:wrap;margin-top:4px">
+      <button class="btn primary" value="save" data-act="saveSettings">Save</button>
+      <button class="btn" type="button" data-act="exportData">Export backup</button>
+      <label class="btn" style="cursor:pointer">Import backup<input type="file" accept="application/json" id="importFile" class="sr"></label>
+    </div>
+    <div class="flex" style="flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--line)">
+      <button class="btn sm" type="button" data-act="resetSample">Reload sample data</button>
+      <button class="btn sm" type="button" data-act="clearAll">Start empty</button>
+      <span class="small muted">Data is saved in this browser only.</span>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+/* ---------- helpers ---------- */
+const KEY = 'mission-control-v1';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const usd = n => '$' + Math.round(n).toLocaleString('en-US');
+const k = n => '$' + (n / 1000).toFixed(1) + 'K';
+const H = 3600000, D = 86400000;
+const hm = t => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const dayLabel = t => new Date(t).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const shortDate = t => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const isoDay = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+const monthKey = d => { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+const monthName = key => { const [y, m] = key.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short' }); };
+const hexA = (hex, a) => { let h = (hex || '#2DD4BF').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); const n = parseInt(h, 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+const ago = t => { const s = (Date.now() - new Date(t)) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return shortDate(t); };
+const clock = t => { const d = new Date(t), now = new Date(); return d.toDateString() === now.toDateString() ? hm(t) : shortDate(t); };
+const countdown = ms => { if (ms <= 0) return 'LIVE'; const m = Math.round(ms / 60000); return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + 'm'; };
+
+/* ---------- seed data ---------- */
+function seed() {
+  const now = Date.now();
+  const slot = Math.ceil(now / (H / 2)) * (H / 2);
+  const m = new Date(); m.setDate(1);
+  const prevMonths = [5, 4, 3, 2, 1].map(i => { const d = new Date(m); d.setMonth(d.getMonth() - i); return monthKey(d); });
+  const day = n => { const d = new Date(); d.setDate(n); return isoDay(d); };
+  const goal = new Date(new Date().getFullYear(), 11, 31);
+  return {
+    v: 1,
+    settings: { name: 'Aldra', accent: '#2DD4BF', goalMrr: 20000, goalDate: isoDay(goal) },
+    priorities: [
+      { id: uid(), text: 'Send Bluefin the Q1 proposal', tag: 'SALES', done: true },
+      { id: uid(), text: 'Record video: agent memory setup', tag: 'CONTENT', done: false },
+      { id: uid(), text: 'Review Scout’s competitor report', tag: 'INTEL', done: false },
+      { id: uid(), text: 'Approve this month’s ad budget', tag: 'FINANCE', done: true },
+      { id: uid(), text: 'Prep agenda for Northwind call', tag: 'MEETING', done: false }
+    ],
+    activity: [
+      { t: now - 15 * 60000, who: 'Scout', what: 'finished the competitor pricing scan' },
+      { t: now - 40 * 60000, who: 'Ledger', what: 'flagged an unpaid invoice from Oakline' },
+      { t: now - 1.1 * H, who: 'Quill', what: 'drafted 3 hooks for the next video' },
+      { t: now - 2.5 * H, who: 'Atlas', what: 'moved “Client portal v2” to In Progress' },
+      { t: now - 4 * H, who: 'Atlas', what: 'posted the morning brief to Telegram' }
+    ],
+    projects: [
+      { id: uid(), col: 0, title: 'Lead-gen pipeline', desc: 'Crawl local businesses, score fit, draft outreach for review.', priority: 'HIGH', created: now - 5 * D },
+      { id: uid(), col: 0, title: 'SEO sub-agent', desc: 'Weekly site audit with a shareable report.', priority: 'MEDIUM', created: now - 10 * D },
+      { id: uid(), col: 0, title: 'Telegram thread organizer', desc: 'Route agent updates into topic threads.', priority: 'LOW', created: now - 14 * D },
+      { id: uid(), col: 1, title: 'Client portal v2', desc: 'Self-serve reports and invoices for retainer clients.', priority: 'HIGH', created: now - 16 * D },
+      { id: uid(), col: 1, title: 'Memory power pack', desc: 'Layered memory with semantic search and nightly curation.', priority: 'MEDIUM', created: now - 19 * D },
+      { id: uid(), col: 1, title: 'YouTube: agent series', desc: 'Four-part series on running a one-person agent team.', priority: 'MEDIUM', created: now - 22 * D },
+      { id: uid(), col: 2, title: 'Mission Control foundation', desc: 'Dashboard, projects, timeline and notes.', priority: 'HIGH', created: now - 32 * D },
+      { id: uid(), col: 2, title: 'Model stack routing', desc: 'Route cheap tasks to smaller models to cut spend.', priority: 'LOW', created: now - 37 * D }
+    ],
+    phases: [
+      { id: uid(), title: 'Foundation', range: 'Sep 1 – Sep 30', desc: 'Stand up Mission Control and the first agent.', ms: [
+        { id: uid(), label: 'Dashboard, projects and notes live', done: true }, { id: uid(), label: 'Atlas running the daily brief', done: true }, { id: uid(), label: 'Telegram connected', done: true }] },
+      { id: uid(), title: 'Agent team', range: 'Oct 1 – Oct 31', desc: 'Add specialist coworkers and the safety layer.', ms: [
+        { id: uid(), label: 'Scout, Quill and Ledger onboarded', done: true }, { id: uid(), label: 'Rules check on every action', done: true }, { id: uid(), label: 'Memory pack with nightly curation', done: true }] },
+      { id: uid(), title: 'Revenue push', range: 'Nov 1 – Dec 31', desc: 'Grow to the monthly revenue goal with lead-gen and content.', current: true, ms: [
+        { id: uid(), label: 'Lead-gen pilot: 40 dental clinics', done: true }, { id: uid(), label: 'Close 3 new retainers', done: false }, { id: uid(), label: 'New pricing live Dec 1', done: false }, { id: uid(), label: 'Agent YouTube series published', done: false }] },
+      { id: uid(), title: 'Scale', range: 'Jan – Mar', desc: 'Hand repeatable work to agents and grow the channel.', ms: [
+        { id: uid(), label: 'Client portal v2 launched', done: false }, { id: uid(), label: '1K subscribers', done: false }, { id: uid(), label: 'Weekly reviews fully automated', done: false }] }
+    ],
+    agents: [
+      { id: 'atlas', name: 'Atlas', role: 'Chief of staff', status: 'Online', model: 'Claude Opus', last: now - 2 * 60000,
+        desc: 'Runs the daily brief, triages requests and hands work to the other agents.', caps: ['Daily brief', 'Task routing', 'Calendar', 'Telegram'],
+        session: { url: 'calendar.example.com/week', title: 'This week', target: 'checking Thu 2:00', block: 1, steps: ['Read today’s calendar', 'Find a 30-min slot with Northwind', 'Draft the reschedule message', 'Ask you before sending'], cur: 1 },
+        log: [{ t: now - 2.5 * H, x: 'Moved “Client portal v2” to In Progress' }, { t: now - 4 * H, x: 'Posted morning brief to Telegram' }] },
+      { id: 'scout', name: 'Scout', role: 'Research', status: 'Busy', model: 'Claude Sonnet', last: now,
+        desc: 'Watches competitors and industry news, and keeps the intel feed stocked.', caps: ['Web research', 'Competitor watch', 'Intel feed', 'Lead scoring'],
+        session: { url: 'rival-one.example.com/pricing', title: 'Plans & pricing', target: 'reading price', block: 1, steps: ['Open 6 competitor pricing pages', 'Capture plan names and prices', 'Compare against your tiers', 'Draft a summary for the intel feed', 'Ask before posting to Telegram'], cur: 2 },
+        log: [{ t: now - 15 * 60000, x: 'Finished competitor pricing scan' }, { t: now - 4.5 * H, x: 'Added 2 items to the intel feed' }] },
+      { id: 'quill', name: 'Quill', role: 'Content', status: 'Online', model: 'Claude Sonnet', last: now - H,
+        desc: 'Drafts video scripts, hooks, newsletters and social posts in your voice.', caps: ['Scripts', 'Hooks', 'Newsletter', 'Repurposing'],
+        session: { url: 'studio.video.example.com/upload', title: 'Upload details', target: 'typing description', block: 0, steps: ['Open the upload page', 'Fill in title and description', 'Add chapters', 'Ask before publishing'], cur: 1 },
+        log: [{ t: now - 1.1 * H, x: 'Drafted 3 hooks for the next video' }] },
+      { id: 'ledger', name: 'Ledger', role: 'Finance', status: 'Offline', model: 'Haiku', last: now - 40 * 60000,
+        desc: 'Tracks invoices, MRR and spend, and flags anything overdue.', caps: ['Invoices', 'MRR', 'Spend alerts'], session: null,
+        log: [{ t: now - 40 * 60000, x: 'Flagged unpaid invoice from Oakline' }] }
+    ],
+    decisions: [
+      { id: uid(), date: now - D, q: 'Raise retainer price for new clients?', d: 'Yes — $1,500 → $1,800 from Dec 1; existing clients keep their rate.', who: 'Ledger, Scout' },
+      { id: uid(), date: now - 4 * D, q: 'Weekly or twice-weekly uploads?', d: 'Weekly long-form plus two Shorts; revisit at 1K subscribers.', who: 'Quill, Atlas' },
+      { id: uid(), date: now - 7 * D, q: 'Which niche for the lead-gen pilot?', d: 'Dental clinics within 30 miles — highest site-quality gap.', who: 'Scout' }
+    ],
+    tasks: [
+      { id: uid(), name: 'Nightly memory curation', who: 'Atlas', state: 'running' },
+      { id: uid(), name: 'Lead scoring: 40 dental clinics', who: 'Scout', state: 'paused' },
+      { id: uid(), name: 'Caption Shorts batch', who: 'Quill', state: 'failed', note: 'upload timed out' }
+    ],
+    queue: [{ id: uid(), to: 'Scout', text: 'Also note annual pricing if they show it' }],
+    meetings: [
+      { id: uid(), title: 'Northwind strategy call', start: slot + H, dur: 45, type: 'Zoom', attendees: '3 attendees', notes: 'They want fewer, deeper reports. Lead with the lead-gen numbers, then the retainer.', actions: ['Send revised proposal by Friday'],
+        agenda: [{ id: uid(), text: 'Recap last month’s results', done: true }, { id: uid(), text: 'Pitch Q1 content retainer', done: false }, { id: uid(), text: 'Agree on reporting cadence', done: false }] },
+      { id: uid(), title: 'Podcast guest prep', start: slot + 3.5 * H, dur: 30, type: 'Call', attendees: '1 attendee', notes: '', actions: [],
+        agenda: [{ id: uid(), text: 'Confirm topic: one-person agent teams', done: true }, { id: uid(), text: 'Pick 3 stories', done: false }, { id: uid(), text: 'Check audio setup', done: false }] },
+      { id: uid(), title: 'Weekly agent review', start: slot + 6 * H, dur: 30, type: 'Solo', attendees: 'You + agents', notes: '', actions: [],
+        agenda: [{ id: uid(), text: 'Review decisions log', done: false }, { id: uid(), text: 'Retry failed background tasks', done: false }] },
+      { id: uid(), title: 'Bluefin quarterly review', start: slot + 26 * H, dur: 60, type: 'In person', attendees: '2 attendees', notes: '', actions: [], agenda: [{ id: uid(), text: 'Q1 proposal walkthrough', done: false }] },
+      { id: uid(), title: 'Harbor Dental onboarding', start: slot + 50 * H, dur: 45, type: 'Zoom', attendees: '4 attendees', notes: '', actions: [], agenda: [{ id: uid(), text: 'Access and accounts', done: false }] },
+      { id: uid(), title: 'Kite & Co check-in', start: slot - 3 * H, dur: 30, type: 'Call', attendees: '1 attendee', notes: '', actions: ['Send renewal invoice', 'Share next month’s plan'], agenda: [] },
+      { id: uid(), title: 'Lumen Labs kickoff', start: slot - 26 * H, dur: 60, type: 'Zoom', attendees: '3 attendees', notes: '', actions: ['Set up shared Space', 'Book weekly slot', 'Send welcome pack'], agenda: [] }
+    ],
+    clients: [
+      { id: uid(), name: 'Northwind Studio', v: 4000, status: 'Active', since: 'Mar 2026' },
+      { id: uid(), name: 'Bluefin Coffee', v: 3200, status: 'Active', since: 'May 2026' },
+      { id: uid(), name: 'Harbor Dental', v: 2400, status: 'Active', since: 'Jul 2026' },
+      { id: uid(), name: 'Kite & Co', v: 1800, status: 'Active', since: 'Aug 2026' },
+      { id: uid(), name: 'Lumen Labs', v: 1200, status: 'Active', since: 'Nov 2026' },
+      { id: uid(), name: 'Oakline Fitness', v: 1000, status: 'Active', since: 'Sep 2026' },
+      { id: uid(), name: 'Redwood Realty', v: 1500, status: 'Pending', since: '—' },
+      { id: uid(), name: 'Parcel Goods', v: 900, status: 'Churned', since: 'Jan 2026' }
+    ],
+    history: prevMonths.map((key, i) => ({ m: key, v: [8200, 9100, 10400, 11000, 12800][i] })),
+    youtube: { subs: 640, ideas: [
+      { id: uid(), title: 'How I run a one-person agent team', topic: 'AGENTS', stage: 3, date: day(5) },
+      { id: uid(), title: 'Memory that actually remembers', topic: 'AGENTS', stage: 2, date: day(12) },
+      { id: uid(), title: 'Shorts: 3 agent shortcuts', topic: 'SHORTS', stage: 1, date: day(9) },
+      { id: uid(), title: 'Lead-gen agent: 40 clinics in a day', topic: 'LEAD GEN', stage: 1, date: day(19) },
+      { id: uid(), title: 'My Mission Control tour', topic: 'DASHBOARDS', stage: 0, date: day(26) },
+      { id: uid(), title: 'Route tasks to cheaper models', topic: 'COSTS', stage: 0, date: '' },
+      { id: uid(), title: 'The rules check, explained', topic: 'SAFETY', stage: 4, date: isoDay(now - 5 * D) }
+    ] },
+    intel: [
+      { id: uid(), imp: 'hot', cat: 'AI News', title: 'Smaller model tier cuts agent running costs', summary: 'A cheaper tier handles routine agent steps well; worth routing simple tasks to it.', source: 'example-lab.com', date: now - 2 * H },
+      { id: uid(), imp: 'hot', cat: 'Opportunities', title: 'Local dentists asking about AI booking help', summary: 'Three clinics in the pilot list mentioned no-shows unprompted. Strong outreach angle.', source: 'Scout · lead calls', date: now - 3 * H },
+      { id: uid(), imp: 'notable', cat: 'Competitor Watch', title: 'A competitor launched a $49 starter tier', summary: 'Self-serve only, no strategy calls. Your retainer stays differentiated on done-for-you work.', source: 'rival-one.example.com', date: now - D },
+      { id: uid(), imp: 'notable', cat: 'Industry Trends', title: 'Small agencies bundling AI ops with retainers', summary: 'More agencies price monthly AI operations as an add-on rather than one-off builds.', source: 'trade-newsletter.example', date: now - 2 * D },
+      { id: uid(), imp: 'ref', cat: 'AI News', title: 'AG-UI protocol adds streaming tool events', summary: 'Relevant for plugging new coworkers into OpenBot later.', source: 'protocol-docs.example', date: now - 3 * D }
+    ],
+    notes: [
+      { id: uid(), saved: now - 3 * H, body: '# Monthly plan\nHit the revenue goal by the end of the year.\n\n# Focus\n- Close 3 new retainers from the dental pilot\n- Publish the agent series every Thursday\n- New pricing live Dec 1\n\n# Agents\n- Atlas: daily brief + weekly review\n- Scout: lead scoring, competitor watch\n- Quill: scripts and Shorts\n- Ledger: invoices, chase Oakline' },
+      { id: uid(), saved: now - D, body: '# Video ideas\n- Mission Control tour\n- What a rules check actually blocks\n- Memory that remembers' },
+      { id: uid(), saved: now - 6 * D, body: '# Stack decisions\n- Hermes for memory and skills\n- OpenBot rules check on everything\n- Cua Driver for desktop apps' }
+    ],
+    stackOff: {},
+    approvals: [{ id: uid(), who: 'Quill', what: 'post the new video announcement to your Telegram channel', rule: 'public posts → ask first', state: 'pending' }],
+    actionLog: [
+      { t: now - 10 * 60000, outcome: 'ALLOW', who: 'Scout', what: 'opened 6 competitor pricing pages' },
+      { t: now - 20 * 60000, outcome: 'REFUSE', who: 'Ledger', what: 'tried to email an invoice from an unverified address' },
+      { t: now - 40 * 60000, outcome: 'ALLOW', who: 'Atlas', what: 'saved “weekly brief” as a reusable skill' },
+      { t: now - 55 * 60000, outcome: 'ASK', who: 'Atlas', what: 'asked to reschedule the Northwind call — approved' }
+    ]
+  };
+}
+function emptyState() {
+  const s = seed();
+  return { ...s, priorities: [], activity: [], projects: [], phases: s.phases.map(p => ({ ...p, ms: p.ms.map(m => ({ ...m, done: false })) })),
+    decisions: [], tasks: [], queue: [], meetings: [], clients: [], history: [], youtube: { subs: 0, ideas: [] }, intel: [], notes: [], approvals: [], actionLog: [],
+    agents: s.agents.map(a => ({ ...a, log: [], status: 'Offline', session: null })) };
+}
+
+/* ---------- state ---------- */
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
+if (!S || S.v !== 1) S = seed();
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Could not save — browser storage is full or blocked.'); } };
+save();
+const ui = { cat: 'All', imp: 'all', clientFilter: 'All', agent: 'scout', control: null, paused: {}, meetingOpen: null, editingProject: null, addingProject: false,
+  noteId: null, noteMode: 'edit', calOffset: 0 };
+const log = (who, what) => { S.activity.unshift({ t: Date.now(), who, what }); S.activity = S.activity.slice(0, 60); };
+function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+function applyAccent() {
+  const a = S.settings.accent || '#2DD4BF', r = document.documentElement.style;
+  r.setProperty('--accent', a); r.setProperty('--accent-soft', hexA(a, .14)); r.setProperty('--accent-wash', hexA(a, .06)); r.setProperty('--accent-line', hexA(a, .45));
+}
+
+/* ---------- derived ---------- */
+const mrr = () => S.clients.filter(c => c.status === 'Active').reduce((s, c) => s + Number(c.v || 0), 0);
+const daysToGoal = () => Math.max(0, Math.ceil((new Date(S.settings.goalDate + 'T23:59:59') - Date.now()) / D));
+const monthsToGoal = () => Math.max(1, Math.ceil(daysToGoal() / 30.4));
+const ended = m => m.start + m.dur * 60000 < Date.now();
+const noteTitle = n => ((n.body.split('\n').find(l => l.trim()) || 'Untitled').replace(/^#+\s*/, '').trim() || 'Untitled');
+
+/* ---------- routes ---------- */
+const ROUTES = [['dashboard', 'Dashboard'], ['projects', 'Projects'], ['timeline', 'Timeline'], ['agents', 'Command Center'], ['meetings', 'Meetings'],
+  ['revenue', 'Revenue'], ['youtube', 'YouTube'], ['intel', 'Intel'], ['notes', 'Notes'], ['stack', 'Stack']];
+const route = () => { const r = (location.hash || '#dashboard').slice(1).split('/')[0]; return ROUTES.some(x => x[0] === r) ? r : 'dashboard'; };
+
+let lastRoute = null;
+function render() {
+  const r = route();
+  $('#tabs').innerHTML = ROUTES.map(([id, label]) => `<a href="#${id}" class="${id === r ? 'on' : ''}" ${id === r ? 'aria-current="page"' : ''}>${label}</a>`).join('');
+  const v = $('#view');
+  const focusId = document.activeElement && document.activeElement.id;
+  v.innerHTML = VIEWS[r]();
+  if (r !== lastRoute) { v.classList.remove('fade'); void v.offsetWidth; v.classList.add('fade'); lastRoute = r; } else v.classList.remove('fade');
+  document.title = 'Mission Control — ' + ROUTES.find(x => x[0] === r)[1];
+  if (focusId && document.getElementById(focusId) && v.contains(document.getElementById(focusId))) document.getElementById(focusId).focus();
+}
+
+/* ---------- shared bits ---------- */
+const prioTag = p => p === 'HIGH' ? 'warn' : p === 'MEDIUM' ? 'info' : '';
+const impTag = i => i === 'hot' ? ['HOT', 'warn'] : i === 'notable' ? ['NOTABLE', 'info'] : ['REFERENCE', ''];
+const statusDot = s => s === 'Online' ? 'var(--accent)' : s === 'Busy' ? 'var(--warn)' : '#5B6372';
+const head = (eyebrow, title, right = '') => `<section class="between" style="align-items:flex-end"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1></div>${right}</section>`;
+
+/* ---------- views ---------- */
+const VIEWS = {};
+
+VIEWS.dashboard = () => {
+  const hr = new Date().getHours();
+  const greet = hr < 5 ? 'Good evening' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  const done = S.priorities.filter(p => p.done).length, total = S.priorities.length;
+  const goal = Number(S.settings.goalMrr) || 1, cur = mrr(), pct = Math.min(100, Math.round(cur / goal * 100));
+  const active = S.projects.filter(p => p.col < 2).length, inProg = S.projects.filter(p => p.col === 1).length;
+  const next = S.meetings.filter(m => !ended(m)).sort((a, b) => a.start - b.start)[0];
+  const todays = S.meetings.filter(m => !ended(m) && new Date(m.start).toDateString() === new Date().toDateString()).sort((a, b) => a.start - b.start).slice(0, 3);
+  const brief = briefItems();
+  const now = new Date();
+  return `
+  ${head(`<span id="liveDate">${now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${hm(now)}</span>`, `${greet}, ${esc(S.settings.name || 'there')}`,
+    next ? `<a href="#meetings" class="card tight flex" style="padding:10px 16px"><span class="muted">Next up:</span><span class="strong">${esc(next.title)}</span><span class="mono small" style="color:var(--accent)" data-cd="${next.start}">${next.start - Date.now() > 0 ? 'in ' + countdown(next.start - Date.now()) : 'LIVE'}</span></a>` : '')}
+  <section class="grid" style="--min:230px" aria-label="Key metrics">
+    ${metric('GOAL PROGRESS', '%', pct + '%', `${k(cur)} of ${k(goal)} MRR`, pct)}
+    ${metric('ACTIVE PROJECTS', '#', active, `${inProg} in progress`, S.projects.length ? Math.round(active / S.projects.length * 100) : 0)}
+    ${metric('TASKS TODAY', '✓', `${done} / ${total}`, 'Priorities checked off', total ? Math.round(done / total * 100) : 0)}
+    ${metric('DAYS TO GOAL', 'D', daysToGoal(), 'Target: ' + new Date(S.settings.goalDate + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), Math.max(0, 100 - Math.round(daysToGoal() / 3.65)))}
+  </section>
+  <section class="row">
+    <div class="card grow">
+      <div class="between" style="margin-bottom:14px"><h2>Top priorities</h2><span class="mono small muted">${done} / ${total} done</span></div>
+      <ul class="clean stack" style="--gap:6px">
+        ${S.priorities.map(p => `<li class="flex" style="--gap:6px"><label class="check ${p.done ? 'done' : ''}" style="flex:1"><input type="checkbox" data-change="togglePriority" data-id="${p.id}" ${p.done ? 'checked' : ''}><span class="t">${esc(p.text)}</span><span class="label">${esc(p.tag)}</span></label><button class="x" data-act="delPriority" data-id="${p.id}" aria-label="Delete priority">×</button></li>`).join('') || '<li class="empty">No priorities yet.</li>'}
+      </ul>
+      <form data-submit="addPriority" class="form-row" style="margin-top:12px">
+        <label class="sr" for="newPriority">New priority</label>
+        <input id="newPriority" name="text" class="input" placeholder="Add a priority…" style="border-style:dashed;background:transparent">
+        <select name="tag" class="input" style="flex:0 0 130px" aria-label="Tag"><option>GENERAL</option><option>SALES</option><option>CONTENT</option><option>INTEL</option><option>FINANCE</option><option>MEETING</option></select>
+        <button class="btn primary">Add</button>
+      </form>
+    </div>
+    <div class="card side">
+      <div class="between" style="margin-bottom:8px"><h2>Activity</h2><span class="small muted">Live</span></div>
+      <ol class="clean feed" style="max-height:380px;overflow:auto">
+        ${S.activity.slice(0, 14).map(a => `<li><span class="time">${clock(a.t)}</span><span style="color:var(--text2)"><b style="color:var(--accent);font-weight:600">${esc(a.who)}</b> ${esc(a.what)}</span></li>`).join('') || '<li class="muted">Nothing yet.</li>'}
+      </ol>
+    </div>
+  </section>
+  <section class="grid" style="--min:300px">
+    <div class="card"><div class="between" style="margin-bottom:12px"><h2>Agents</h2><a class="link" href="#agents">Command Center →</a></div>
+      <div class="stack">${S.agents.map(a => `<div class="flex"><span class="avatar">${esc(a.name[0])}</span><div style="flex:1;min-width:0"><div class="strong">${esc(a.name)}</div><div class="small muted">${esc(a.role)}</div></div><span class="flex small" style="--gap:6px;color:var(--muted)"><span class="dot" style="background:${statusDot(a.status)}"></span>${a.status}</span></div>`).join('')}</div></div>
+    <div class="card"><div class="between" style="margin-bottom:12px"><h2>Today's meetings</h2><a class="link" href="#meetings">Meeting prep →</a></div>
+      <div class="stack" style="--gap:8px">${todays.map(m => `<div class="sub" style="padding:12px 14px"><div class="between"><span class="strong">${esc(m.title)}</span><span class="mono small" style="color:var(--accent)">${hm(m.start)}</span></div><div class="small muted">${esc(m.type)} · ${esc(m.attendees)}</div></div>`).join('') || '<div class="empty">No more meetings today.</div>'}</div></div>
+    <div class="card"><div class="between" style="margin-bottom:12px"><h2>Daily brief</h2><a class="link" href="#intel">Intel feed →</a></div>
+      <div class="stack">${brief.map(i => { const [l, c] = impTag(i.imp); return `<div class="flex" style="align-items:flex-start;--gap:12px"><span class="tag ${c}">${l}</span><div><div class="strong" style="line-height:1.4">${esc(i.title)}</div><div class="small muted">${esc(i.cat)}</div></div></div>`; }).join('') || '<div class="empty">No intel yet.</div>'}</div></div>
+  </section>`;
+};
+const metric = (label, glyph, value, sub, pct) => `<div class="card metric"><div class="between"><span class="label">${label}</span><span class="glyph">${glyph}</span></div><div class="v">${value}</div><div class="small" style="color:var(--muted);margin-top:4px">${esc(sub)}</div><div class="bar" style="margin-top:14px"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div></div>`;
+
+VIEWS.projects = () => {
+  const cols = ['BACKLOG', 'IN PROGRESS', 'DONE'];
+  return `
+  ${head(S.projects.length + ' projects', 'Projects', `<button class="btn primary" data-act="toggleAddProject">${ui.addingProject ? 'Cancel' : '+ New project'}</button>`)}
+  ${ui.addingProject ? `<form data-submit="addProject" class="card stack">
+    <div class="grid" style="--min:220px"><label class="field">Title<input id="projTitle" name="title" class="input" required></label>
+    <label class="field">Priority<select name="priority" class="input"><option>HIGH</option><option selected>MEDIUM</option><option>LOW</option></select></label>
+    <label class="field">Column<select name="col" class="input"><option value="0">Backlog</option><option value="1">In progress</option><option value="2">Done</option></select></label></div>
+    <label class="field">Description<textarea name="desc" class="input"></textarea></label>
+    <div><button class="btn primary">Add project</button></div></form>` : ''}
+  <section class="grid" style="--min:290px;align-items:start">
+    ${cols.map((t, i) => { const cards = S.projects.filter(p => p.col === i); return `<div class="col"><div class="between" style="padding:2px 4px"><h2 style="font-size:13px;letter-spacing:.1em">${t}</h2><span class="tag">${cards.length}</span></div>
+      ${cards.map(p => ui.editingProject === p.id ? `<form class="kcard" data-submit="saveProject" data-id="${p.id}">
+          <label class="field">Title<input name="title" class="input" value="${esc(p.title)}" required></label>
+          <label class="field">Description<textarea name="desc" class="input">${esc(p.desc)}</textarea></label>
+          <label class="field">Priority<select name="priority" class="input">${['HIGH', 'MEDIUM', 'LOW'].map(x => `<option ${x === p.priority ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+          <div class="flex"><button class="btn primary sm">Save</button><button type="button" class="btn sm" data-act="cancelEditProject">Cancel</button></div></form>`
+        : `<article class="kcard"><div class="between"><span class="tag ${prioTag(p.priority)}">${p.priority}</span><span class="mono small muted">${shortDate(p.created)}</span></div>
+          <h3>${esc(p.title)}</h3>${p.desc ? `<p class="muted" style="font-size:13px">${esc(p.desc)}</p>` : ''}
+          <div class="between"><div class="flex" style="--gap:2px"><button class="x" data-act="editProject" data-id="${p.id}" aria-label="Edit project">✎</button><button class="x" data-act="delProject" data-id="${p.id}" aria-label="Delete project">×</button></div>
+          <div class="flex" style="--gap:6px">${i > 0 ? `<button class="btn sm icon" data-act="moveProject" data-id="${p.id}" data-d="-1" aria-label="Move left">←</button>` : ''}${i < 2 ? `<button class="btn sm icon" style="color:var(--accent)" data-act="moveProject" data-id="${p.id}" data-d="1" aria-label="Move right">→</button>` : ''}</div></div></article>`).join('')}
+    </div>`; }).join('')}
+  </section>`;
+};
+
+VIEWS.timeline = () => {
+  const all = S.phases.flatMap(p => p.ms), done = all.filter(m => m.done).length, pct = all.length ? Math.round(done / all.length * 100) : 0;
+  const nextUp = S.phases.flatMap(p => p.ms.filter(m => !m.done).map(m => ({ label: m.label, phase: p.title }))).slice(0, 4);
+  return `
+  ${head(`${done} of ${all.length} milestones`, 'Timeline', `<div style="flex:0 1 420px;min-width:240px"><div class="between small muted" style="margin-bottom:6px"><span>Overall progress</span><span class="mono" style="color:var(--accent)">${pct}%</span></div><div class="bar" style="height:8px"><i style="width:${pct}%"></i></div></div>`)}
+  <section class="row">
+    <ol class="clean grow">
+      ${S.phases.map((p, i) => { const complete = p.ms.length && p.ms.every(m => m.done), cur = !!p.current; return `
+      <li style="display:flex;gap:18px">
+        <div aria-hidden="true" style="flex:0 0 28px;display:flex;flex-direction:column;align-items:center">
+          <span style="width:28px;height:28px;border-radius:50%;border:2px solid ${complete || cur ? 'var(--accent)' : 'rgba(255,255,255,.2)'};background:${complete ? 'var(--accent)' : 'var(--bg)'};display:flex;align-items:center;justify-content:center;color:var(--on-accent);font-weight:700;font-size:13px;box-shadow:${cur ? '0 0 0 6px var(--accent-soft)' : 'none'}">${complete ? '✓' : ''}</span>
+          <span style="flex:1;width:2px;min-height:20px;background:${i === S.phases.length - 1 ? 'transparent' : complete ? 'var(--accent-line)' : 'rgba(255,255,255,.1)'}"></span>
+        </div>
+        <article class="card ${cur ? 'hl' : ''}" style="flex:1;margin-bottom:18px;${cur ? 'box-shadow:0 0 40px var(--accent-soft)' : ''}">
+          <div class="between"><div class="flex"><h2 style="font-size:18px">${esc(p.title)}</h2><span class="tag ${cur ? 'accent' : complete ? '' : 'info'}">${cur ? 'CURRENT' : complete ? 'COMPLETE' : 'UPCOMING'}</span></div>
+            <div class="flex"><span class="mono small muted">${esc(p.range)}</span>${cur ? '' : `<button class="btn sm" data-act="setPhase" data-id="${p.id}">Make current</button>`}</div></div>
+          <p class="muted" style="margin:8px 0 12px">${esc(p.desc)}</p>
+          <ul class="clean grid" style="--min:240px;gap:6px">${p.ms.map(m => `<li><label class="check ${m.done ? 'done' : ''}"><input type="checkbox" data-change="toggleMilestone" data-phase="${p.id}" data-id="${m.id}" ${m.done ? 'checked' : ''}><span class="t">${esc(m.label)}</span></label></li>`).join('')}</ul>
+          <form data-submit="addMilestone" data-phase="${p.id}" class="form-row" style="margin-top:10px"><label class="sr" for="ms-${p.id}">New milestone</label><input id="ms-${p.id}" name="label" class="input" placeholder="Add a milestone…" style="height:40px;border-style:dashed;background:transparent"><button class="btn sm">Add</button></form>
+        </article>
+      </li>`; }).join('')}
+    </ol>
+    <aside class="side stack" style="--gap:16px">
+      <div class="card"><p class="label">Days to goal</p><div style="font-size:56px;font-weight:700;line-height:1;margin-top:8px">${daysToGoal()}</div><p class="muted" style="margin-top:8px">${k(Number(S.settings.goalMrr))} MRR by ${new Date(S.settings.goalDate + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p></div>
+      <div class="card"><p class="label" style="margin-bottom:10px">Next milestones</p><ul class="clean stack">${nextUp.map(n => `<li class="flex" style="align-items:flex-start"><span class="dot" style="margin-top:7px"></span><span><span class="strong" style="display:block">${esc(n.label)}</span><span class="small muted">${esc(n.phase)}</span></span></li>`).join('') || '<li class="muted">All done.</li>'}</ul></div>
+    </aside>
+  </section>`;
+};
+
+VIEWS.agents = () => {
+  const sel = S.agents.find(a => a.id === ui.agent) || S.agents[0];
+  const sess = sel.status !== 'Offline' ? sel.session : null;
+  const inControl = sess && ui.control === sel.id, paused = sess && (inControl || ui.paused[sel.id]);
+  const steps = sess ? sess.steps : [];
+  const online = S.agents.filter(a => a.status !== 'Offline').length;
+  return `
+  ${head(`${online} of ${S.agents.length} agents active`, 'Command Center')}
+  <section class="row">
+    <div class="grow grid" style="--min:230px">
+      ${S.agents.map(a => `<button type="button" class="card" data-act="pickAgent" data-id="${a.id}" aria-pressed="${a.id === sel.id}" style="text-align:left;display:flex;flex-direction:column;gap:12px;${a.id === sel.id ? 'border-color:var(--accent);background:var(--accent-wash)' : ''}">
+        <span class="between" style="width:100%"><span class="avatar" style="width:44px;height:44px;font-size:17px">${esc(a.name[0])}</span><span class="flex small" style="--gap:6px;color:var(--muted)"><span class="dot" style="background:${statusDot(a.status)}"></span>${a.status}</span></span>
+        <span><span style="display:block;font-size:17px;font-weight:700">${esc(a.name)}</span><span class="small muted">${esc(a.role)}</span></span>
+        <span class="between mono small muted" style="width:100%;font-size:11px"><span>${esc(a.model)}</span><span>${ago(a.last)}</span></span></button>`).join('')}
+    </div>
+    <aside class="card side stack" style="--gap:16px" aria-label="Agent details">
+      <div class="flex" style="--gap:14px"><span class="avatar" style="width:52px;height:52px;font-size:20px;background:var(--accent-soft);color:var(--accent)">${esc(sel.name[0])}</span><div><h2 style="font-size:20px">${esc(sel.name)}</h2><div class="small muted">${esc(sel.role)} · ${esc(sel.model)}</div></div>
+        <select class="input" style="margin-left:auto;width:auto;height:36px" data-change="agentStatus" data-id="${sel.id}" aria-label="Status">${['Online', 'Busy', 'Offline'].map(s => `<option ${s === sel.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+      <p style="color:var(--text2)">${esc(sel.desc)}</p>
+      <div><p class="label" style="margin-bottom:8px">Capabilities</p><div class="flex" style="flex-wrap:wrap;--gap:6px">${sel.caps.map(c => `<span class="pill" style="border:1px solid var(--line2);font-weight:500">${esc(c)}</span>`).join('')}</div></div>
+      <form data-submit="sendTask" data-id="${sel.id}" class="form-row"><label class="sr" for="taskInput">Task for ${esc(sel.name)}</label><input id="taskInput" name="text" class="input" placeholder="Send ${esc(sel.name)} a task…"><button class="btn primary">Send task</button></form>
+      <div><p class="label" style="margin-bottom:4px">Activity log</p><ol class="clean feed" style="max-height:220px;overflow:auto">${sel.log.slice(0, 12).map(l => `<li><span class="time">${clock(l.t)}</span><span style="color:var(--text2)">${esc(l.x)}</span></li>`).join('') || '<li class="muted">No activity yet.</li>'}</ol></div>
+    </aside>
+  </section>
+
+  <section class="row" aria-label="Live browser view">
+    <div class="grow" style="border-radius:16px;border:1px solid ${inControl ? 'var(--accent)' : 'var(--line2)'};background:var(--bg2);overflow:hidden">
+      <div class="between" style="padding:14px 20px;border-bottom:1px solid var(--line)">
+        <div class="flex"><h2>Live view · ${esc(sel.name)}’s browser</h2><span class="tag ${!sess ? '' : paused && !inControl ? 'warn' : 'accent'}">${!sess ? '' : !paused ? '<span class="dot pulse" style="width:7px;height:7px"></span>' : ''}${!sess ? 'OFFLINE' : inControl ? 'YOU’RE IN CONTROL' : paused ? 'PAUSED' : 'LIVE'}</span></div>
+        ${sess ? `<div class="flex"><button class="btn" data-act="togglePause" data-id="${sel.id}" ${inControl ? 'disabled' : ''}>${paused && !inControl ? 'Resume' : 'Pause'}</button><button class="btn ${inControl ? '' : 'primary'}" data-act="toggleControl" data-id="${sel.id}">${inControl ? 'Hand back' : 'Take control'}</button></div>` : ''}
+      </div>
+      ${sess ? `
+      <div class="flex" style="padding:10px 16px;background:#0D1016;border-bottom:1px solid rgba(255,255,255,.06)"><span aria-hidden="true" class="flex" style="--gap:6px"><span class="dot" style="background:#3A404C;width:10px;height:10px"></span><span class="dot" style="background:#3A404C;width:10px;height:10px"></span><span class="dot" style="background:#3A404C;width:10px;height:10px"></span></span>
+        <div class="mono small" style="flex:1;min-width:0;height:32px;border-radius:8px;background:rgba(255,255,255,.05);display:flex;align-items:center;padding:0 12px;color:var(--muted);overflow:hidden;white-space:nowrap">🔒 ${esc(sess.url)}</div></div>
+      ${inControl ? `<div style="padding:10px 20px;background:var(--accent-soft);color:var(--accent);font-weight:600;font-size:13px">You’re driving. ${esc(sel.name)} is paused and picks up from here when you hand back.</div>` : ''}
+      <div style="padding:24px;display:flex;flex-direction:column;gap:18px;min-height:280px">
+        <div><div style="font-size:22px;font-weight:700">${esc(sess.title)}</div><div style="margin-top:8px;width:46%;height:10px;border-radius:5px;background:rgba(255,255,255,.08)"></div></div>
+        <div class="grid" style="--min:150px;gap:14px">${[0, 1, 2].map(i => `<div style="position:relative;padding:18px;border-radius:12px;border:2px solid ${sess.block === i && !inControl ? 'var(--accent)' : 'var(--line)'};background:rgba(255,255,255,.03);display:flex;flex-direction:column;gap:10px">
+          <div style="width:50%;height:12px;border-radius:6px;background:rgba(255,255,255,.16)"></div><div style="width:35%;height:22px;border-radius:6px;background:rgba(255,255,255,.1)"></div><div style="width:90%;height:8px;border-radius:4px;background:rgba(255,255,255,.06)"></div><div style="width:75%;height:8px;border-radius:4px;background:rgba(255,255,255,.06)"></div>
+          ${sess.block === i && !inControl ? `<span style="position:absolute;top:-13px;right:12px;height:24px;padding:0 10px;border-radius:6px;display:flex;align-items:center;gap:6px;background:var(--accent);color:var(--on-accent);font-size:11px;font-weight:700;white-space:nowrap">▲ ${esc(sel.name)} · ${esc(sess.target)}</span>` : ''}</div>`).join('')}</div>
+      </div>
+      <div class="between small muted" style="padding:12px 20px;border-top:1px solid var(--line)"><span>Step ${sess.cur + 1} of ${steps.length} · ${esc(steps[sess.cur] || '')}</span><span class="flex"><button class="btn sm" data-act="stepBack" data-id="${sel.id}" ${sess.cur <= 0 ? 'disabled' : ''}>Prev step</button><button class="btn sm" data-act="stepNext" data-id="${sel.id}" ${sess.cur >= steps.length - 1 ? 'disabled' : ''}>Next step</button></span></div>
+      <p class="small muted" style="padding:0 20px 14px">Preview only — connect OpenMuse to stream each coworker’s real browser here.</p>`
+      : `<div class="empty" style="margin:24px;min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="strong" style="color:var(--text)">No live session</div><div>${esc(sel.name)} is offline. Set it to Online to start one.</div></div>`}
+    </div>
+    <div class="side stack" style="--gap:16px">
+      <div class="card tight"><p class="label" style="margin-bottom:10px">Plan${sess ? ' · ' + esc(sel.name) : ''}</p>
+        <ol class="clean stack" style="--gap:10px">${steps.map((s, i) => { const d = i < sess.cur, n = i === sess.cur; return `<li class="flex" style="align-items:flex-start"><span style="flex:0 0 22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:${d ? 'var(--accent-soft)' : n ? 'var(--accent)' : 'rgba(255,255,255,.07)'};color:${d ? 'var(--accent)' : n ? 'var(--on-accent)' : 'var(--dim)'}">${d ? '✓' : i + 1}</span><span style="color:${d ? 'var(--dim)' : n ? '#fff' : 'var(--text2)'}">${esc(s)}</span></li>`; }).join('') || '<li class="muted small">No active plan.</li>'}</ol></div>
+      <div class="card tight"><p class="label" style="margin-bottom:6px">Background tasks</p>
+        <ul class="clean">${S.tasks.map(t => { const st = { running: ['Running', 'var(--accent)', 'Pause'], paused: ['Paused', 'var(--warn)', 'Resume'], failed: ['Failed', 'var(--bad)', 'Retry'] }[t.state]; return `<li class="flex" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1;min-width:0"><div class="strong" style="font-size:13px">${esc(t.name)}</div><div class="small muted">${esc(t.who)} · <span style="color:${st[1]};font-weight:600">${st[0]}</span>${t.note ? ' · ' + esc(t.note) : ''}</div></div><button class="btn sm" data-act="taskAct" data-id="${t.id}">${st[2]}</button><button class="x" data-act="delTask" data-id="${t.id}" aria-label="Remove task">×</button></li>`; }).join('') || '<li class="muted small">None running.</li>'}</ul>
+        <form data-submit="addTask" class="form-row" style="margin-top:10px"><label class="sr" for="bgTask">New background task</label><input id="bgTask" name="name" class="input" placeholder="Start a background task for ${esc(sel.name)}…" style="height:40px"><button class="btn sm">Start</button></form></div>
+      <div class="card tight"><p class="label">Follow-up queue</p><p class="small muted" style="margin:2px 0 10px">Delivered when the coworker finishes its current step.</p>
+        <ul class="clean stack" style="--gap:6px;margin-bottom:10px">${S.queue.map(q => `<li class="flex" style="padding:6px 6px 6px 10px;border-radius:8px;background:rgba(255,255,255,.04)"><span class="small strong" style="color:var(--accent)">→ ${esc(q.to)}</span><span style="flex:1;min-width:0;font-size:13px;color:var(--text2)">${esc(q.text)}</span><button class="x" data-act="delQueue" data-id="${q.id}" aria-label="Remove from queue">×</button></li>`).join('')}</ul>
+        <form data-submit="addQueue" class="form-row"><label class="sr" for="queueInput">Follow-up message</label><input id="queueInput" name="text" class="input" placeholder="Queue a follow-up for ${esc(sel.name)}…" style="height:40px"><button class="btn sm">Queue</button></form></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="between" style="margin-bottom:10px"><h2>Executive decisions</h2></div>
+    <div class="scroll-x"><table style="min-width:720px"><thead><tr><th>DATE</th><th>QUESTION</th><th>DECISION</th><th>CONSULTED</th><th></th></tr></thead><tbody>
+      ${S.decisions.map(d => `<tr><td class="mono small muted" style="white-space:nowrap">${shortDate(d.date)}</td><td class="strong">${esc(d.q)}</td><td style="color:var(--text2)">${esc(d.d)}</td><td class="muted">${esc(d.who)}</td><td><button class="x" data-act="delDecision" data-id="${d.id}" aria-label="Delete decision">×</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No decisions logged yet.</td></tr>'}
+    </tbody></table></div>
+    <form data-submit="addDecision" class="grid" style="--min:200px;margin-top:14px;gap:8px">
+      <label class="sr" for="decQ">Question</label><input id="decQ" name="q" class="input" placeholder="Question" required>
+      <label class="sr" for="decD">Decision</label><input id="decD" name="d" class="input" placeholder="Decision" required>
+      <label class="sr" for="decW">Consulted</label><input id="decW" name="who" class="input" placeholder="Agents consulted">
+      <button class="btn primary" style="height:44px">Log decision</button>
+    </form>
+  </section>`;
+};
+
+VIEWS.meetings = () => {
+  const ms = S.meetings.slice().sort((a, b) => a.start - b.start);
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const today = ms.filter(m => !ended(m) && m.start <= end.getTime());
+  const upcoming = ms.filter(m => !ended(m) && m.start > end.getTime());
+  const past = ms.filter(ended).reverse();
+  if (ui.meetingOpen === null && today[0]) ui.meetingOpen = today[0].id;
+  const nowLocal = new Date(Date.now() + H - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return `
+  ${head(`${today.length} today · ${upcoming.length} upcoming · ${past.length} archived`, 'Meeting prep')}
+  <section class="row">
+    <div class="grow stack">
+      <p class="label">Today</p>
+      ${today.map(m => meetingCard(m)).join('') || '<div class="empty">No more meetings today.</div>'}
+      <p class="label" style="margin-top:12px">Upcoming</p>
+      ${upcoming.map(m => meetingCard(m)).join('') || '<div class="empty">Nothing scheduled.</div>'}
+    </div>
+    <aside class="side stack" style="--gap:16px">
+      <form data-submit="addMeeting" class="card tight stack">
+        <h2>Add meeting</h2>
+        <label class="field">Title<input name="title" class="input" required></label>
+        <div class="grid" style="--min:140px;gap:10px"><label class="field">Starts<input name="start" type="datetime-local" class="input" value="${nowLocal}" required></label><label class="field">Minutes<input name="dur" type="number" min="5" step="5" value="30" class="input"></label></div>
+        <div class="grid" style="--min:140px;gap:10px"><label class="field">Type<select name="type" class="input"><option>Zoom</option><option>Call</option><option>In person</option><option>Solo</option></select></label><label class="field">Attendees<input name="attendees" class="input" placeholder="e.g. 3 attendees"></label></div>
+        <button class="btn primary">Add meeting</button>
+      </form>
+      <div class="card tight"><p class="label">Archive</p><p class="small muted" style="margin:2px 0 8px">Meetings move here automatically when they end.</p>
+        <ul class="clean">${past.map(p => `<li class="between" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:nowrap"><span><span class="strong" style="display:block;color:var(--text2)">${esc(p.title)}</span><span class="small muted">${p.actions.length} action items${p.actions.length ? ': ' + esc(p.actions.join(' · ')) : ''}</span></span><span class="flex"><span class="mono small muted" style="white-space:nowrap">${shortDate(p.start)}</span><button class="x" data-act="delMeeting" data-id="${p.id}" aria-label="Delete meeting">×</button></span></li>`).join('') || '<li class="muted small">Nothing archived yet.</li>'}</ul></div>
+    </aside>
+  </section>`;
+};
+function meetingCard(m) {
+  const open = ui.meetingOpen === m.id, diff = m.start - Date.now(), live = diff <= 0;
+  const isToday = new Date(m.start).toDateString() === new Date().toDateString();
+  return `<article style="border-radius:16px;border:1px solid ${open ? 'var(--accent-line)' : 'var(--line)'};background:var(--card);overflow:hidden">
+    <button type="button" data-act="toggleMeeting" data-id="${m.id}" aria-expanded="${open}" style="width:100%;display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:16px 20px;border:0;background:transparent;text-align:left">
+      <span style="min-width:104px;padding:8px 12px;border-radius:10px;background:${live ? 'var(--accent)' : 'var(--accent-soft)'};text-align:center"><span class="mono" ${isToday ? `data-cd="${m.start}" data-plain="1"` : ''} style="display:block;font-size:16px;font-weight:500;color:${live ? 'var(--on-accent)' : 'var(--accent)'}">${isToday ? countdown(diff) : dayLabel(m.start)}</span><span class="small" style="color:${live ? 'var(--on-accent)' : 'var(--dim)'}">${hm(m.start)}</span></span>
+      <span style="flex:1;min-width:200px"><span style="display:block;font-size:16px;font-weight:700">${esc(m.title)}</span><span class="small muted">${esc(m.type)} · ${esc(m.attendees)} · ${m.dur} min</span></span>
+      <span class="mono small muted">${m.agenda.filter(a => a.done).length}/${m.agenda.length} prepped</span>
+      <span aria-hidden="true" style="transform:${open ? 'rotate(180deg)' : 'none'};color:var(--dim)">▾</span>
+    </button>
+    ${open ? `<div class="grid" style="--min:260px;padding:0 20px 20px">
+      <div>
+        <p class="label" style="margin-bottom:8px">Agenda</p>
+        <ul class="clean stack" style="--gap:4px">${m.agenda.map(a => `<li><label class="check ${a.done ? 'done' : ''}" style="min-height:40px"><input type="checkbox" data-change="toggleAgenda" data-mid="${m.id}" data-id="${a.id}" ${a.done ? 'checked' : ''}><span class="t">${esc(a.text)}</span></label></li>`).join('')}</ul>
+        <form data-submit="addAgenda" data-mid="${m.id}" class="form-row" style="margin-top:6px"><label class="sr" for="ag-${m.id}">New agenda item</label><input id="ag-${m.id}" name="text" class="input" placeholder="Add an agenda item…" style="height:40px;border-style:dashed;background:transparent"><button class="btn sm">Add</button></form>
+        <p class="label" style="margin:16px 0 6px">Action items</p>
+        <ul style="margin:0 0 8px;padding-left:18px;color:var(--text2)">${m.actions.map((a, i) => `<li>${esc(a)} <button class="x" style="width:24px;height:24px;font-size:13px" data-act="delAction" data-mid="${m.id}" data-i="${i}" aria-label="Remove action item">×</button></li>`).join('')}</ul>
+        <form data-submit="addAction" data-mid="${m.id}" class="form-row"><label class="sr" for="ac-${m.id}">New action item</label><input id="ac-${m.id}" name="text" class="input" placeholder="Add an action item…" style="height:40px;border-style:dashed;background:transparent"><button class="btn sm">Add</button></form>
+      </div>
+      <div class="stack" style="--gap:6px">
+        <p class="label">Prep notes</p>
+        <label class="sr" for="mn-${m.id}">Prep notes</label>
+        <textarea id="mn-${m.id}" class="input" data-input="meetingNotes" data-mid="${m.id}" style="min-height:200px" placeholder="What do you need from this meeting?">${esc(m.notes)}</textarea>
+        <div class="between"><span class="small muted">Saves as you type.</span><button class="btn sm" data-act="delMeeting" data-id="${m.id}">Delete meeting</button></div>
+      </div>
+    </div>` : ''}
+  </article>`;
+}
+
+VIEWS.revenue = () => {
+  const goal = Number(S.settings.goalMrr) || 1, cur = mrr(), pct = Math.min(100, Math.round(cur / goal * 100));
+  const C = 2 * Math.PI * 80, months = monthsToGoal();
+  const needed = cur > 0 ? (Math.pow(goal / cur, 1 / months) - 1) * 100 : null;
+  const curKey = monthKey(new Date());
+  const series = S.history.filter(h => h.m !== curKey).sort((x, y) => x.m < y.m ? -1 : 1).slice(-5).concat([{ m: curKey, v: cur, live: true }]);
+  const max = Math.max(goal, ...series.map(s => s.v)) || 1;
+  const f = ui.clientFilter, rows = S.clients.filter(c => f === 'All' || c.status === f);
+  const stTag = s => s === 'Active' ? 'accent' : s === 'Pending' ? 'warn' : '';
+  return `
+  ${head(`Goal · ${usd(goal)} MRR by ${new Date(S.settings.goalDate + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`, 'Revenue', `<button class="btn" data-act="openSettings">Edit goal</button>`)}
+  <section class="row">
+    <div class="card side stack" style="align-items:center;--gap:16px">
+      <h2 style="align-self:flex-start">Monthly goal</h2>
+      <div style="position:relative;width:200px;height:200px">
+        <svg width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="${pct} percent of monthly revenue goal"><circle cx="100" cy="100" r="80" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle cx="100" cy="100" r="80" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${(C * pct / 100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 100 100)"/></svg>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font-size:38px;font-weight:700">${pct}%</span><span class="small muted">of ${k(goal)}</span></div>
+      </div>
+      <div class="grid" style="--min:90px;width:100%;text-align:center;gap:8px">
+        <div><div style="font-size:18px;font-weight:700">${k(cur)}</div><div class="label" style="font-size:10px">MRR</div></div>
+        <div><div style="font-size:18px;font-weight:700">${k(cur * 12)}</div><div class="label" style="font-size:10px">Run rate</div></div>
+        <div><div style="font-size:18px;font-weight:700;color:var(--warn)">${needed === null ? '—' : cur >= goal ? 'Hit!' : needed.toFixed(1) + '%'}</div><div class="label" style="font-size:10px">Growth / mo needed</div></div>
+      </div>
+    </div>
+    <div class="card grow">
+      <div class="between" style="margin-bottom:16px"><h2>Last 6 months</h2><div class="flex"><span class="flex small muted"><span style="width:18px;border-top:2px dashed var(--warn)"></span>Goal ${k(goal)}</span><button class="btn sm" data-act="closeMonth" title="Save this month’s MRR to the chart history">Close month</button></div></div>
+      <div role="img" aria-label="Monthly recurring revenue over the last six months" style="position:relative;height:280px;display:flex;align-items:flex-end;gap:16px;border-bottom:1px solid var(--line2)">
+        <div style="position:absolute;left:0;right:0;bottom:${Math.round(goal / max * 240)}px;border-top:2px dashed rgba(245,180,84,.6)"></div>
+        ${series.map(s => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:flex-end"><span class="mono small" style="color:var(--text2)">${k(s.v)}</span><div style="width:100%;max-width:72px;border-radius:8px 8px 2px 2px;height:${Math.max(2, Math.round(s.v / max * 240))}px;background:${s.live ? 'var(--accent)' : 'var(--accent-line)'}"></div></div>`).join('')}
+      </div>
+      <div style="display:flex;gap:16px;margin-top:8px">${series.map(s => `<span class="small strong muted" style="flex:1;text-align:center">${monthName(s.m)}${s.live ? ' (now)' : ''}</span>`).join('')}</div>
+    </div>
+  </section>
+  <section class="card">
+    <div class="between" style="margin-bottom:12px"><h2>Clients</h2><div class="seg" role="group" aria-label="Filter by status">${['All', 'Active', 'Pending', 'Churned'].map(x => `<button type="button" class="${x === f ? 'on' : ''}" aria-pressed="${x === f}" data-act="clientFilter" data-v="${x}">${x}</button>`).join('')}</div></div>
+    <div class="scroll-x"><table style="min-width:640px"><thead><tr><th>CLIENT</th><th>MONTHLY</th><th>STATUS</th><th>SINCE</th><th></th></tr></thead><tbody>
+      ${rows.map(c => `<tr><td class="strong">${esc(c.name)}</td><td class="mono">${usd(c.v)}</td><td><span class="tag ${stTag(c.status)}" style="height:auto;padding:0">
+        <select data-change="clientStatus" data-id="${c.id}" aria-label="Status for ${esc(c.name)}" style="background:transparent;border:0;color:inherit;font:inherit;padding:4px 8px;cursor:pointer">${['Active', 'Pending', 'Churned'].map(s => `<option ${s === c.status ? 'selected' : ''}>${s}</option>`).join('')}</select></span></td>
+        <td class="mono small muted">${esc(c.since)}</td><td><button class="x" data-act="delClient" data-id="${c.id}" aria-label="Delete client">×</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No clients here.</td></tr>'}
+    </tbody></table></div>
+    <form data-submit="addClient" class="grid" style="--min:170px;margin-top:14px;gap:8px">
+      <label class="sr" for="cName">Client name</label><input id="cName" name="name" class="input" placeholder="Client name" required>
+      <label class="sr" for="cVal">Monthly value</label><input id="cVal" name="v" type="number" min="0" step="50" class="input" placeholder="Monthly $" required>
+      <label class="sr" for="cStat">Status</label><select id="cStat" name="status" class="input"><option>Active</option><option>Pending</option></select>
+      <button class="btn primary" style="height:44px">Add client</button>
+    </form>
+  </section>`;
+};
+
+const LEVELS = [{ name: 'Spark', at: 0 }, { name: 'First Hundred', at: 100 }, { name: 'Rising Creator', at: 1000 }, { name: 'Established', at: 10000 }, { name: 'Breakout', at: 100000 }];
+VIEWS.youtube = () => {
+  const Y = S.youtube, subs = Number(Y.subs) || 0;
+  let li = 0; LEVELS.forEach((l, i) => { if (subs >= l.at) li = i; });
+  const next = LEVELS[li + 1], pct = next ? Math.min(100, Math.round((subs - LEVELS[li].at) / (next.at - LEVELS[li].at) * 100)) : 100;
+  const stages = ['IDEA', 'SCRIPTING', 'FILMING', 'EDITING', 'PUBLISHED'];
+  const base = new Date(); base.setDate(1); base.setMonth(base.getMonth() + ui.calOffset);
+  const y = base.getFullYear(), mo = base.getMonth(), first = new Date(y, mo, 1).getDay(), dim = new Date(y, mo + 1, 0).getDate();
+  const cells = []; for (let i = 0; i < first; i++) cells.push(null); for (let d = 1; d <= dim; d++) cells.push(d); while (cells.length % 7) cells.push(null);
+  const todayKey = isoDay(new Date());
+  const inMonth = Y.ideas.filter(c => c.date && c.date.startsWith(y + '-' + String(mo + 1).padStart(2, '0'))).length;
+  const fmtN = n => n >= 1000 ? (n / 1000) + 'K' : String(n);
+  return `
+  ${head(`${Y.ideas.filter(c => c.stage > 0 && c.stage < 4).length} in progress · ${inMonth} scheduled this month`, 'YouTube Studio')}
+  <section class="card hl" style="display:flex;flex-wrap:wrap;gap:28px;align-items:center">
+    <div class="flex" style="--gap:16px">
+      <span style="width:64px;height:64px;border-radius:16px;background:var(--accent-soft);color:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1"><span style="font-size:10px;font-weight:700;letter-spacing:.1em">LVL</span><span style="font-size:26px;font-weight:700">${li + 1}</span></span>
+      <div><div style="font-size:20px;font-weight:700">${LEVELS[li].name}</div>
+        <label class="flex small muted" style="margin-top:4px;--gap:8px">Subscribers<input type="number" min="0" value="${subs}" data-change="setSubs" class="input mono" style="width:120px;height:36px"></label></div>
+    </div>
+    <div style="flex:1 1 400px;min-width:0">
+      <div class="between small muted" style="margin-bottom:8px"><span>${next ? (next.at - subs).toLocaleString('en-US') + ' to ' + next.name : 'Top level reached'}</span><span class="mono" style="color:var(--accent)">${pct}%</span></div>
+      <div class="bar" style="height:14px;border-radius:7px"><i style="width:${pct}%"></i></div>
+      <div class="flex" style="flex-wrap:wrap;margin-top:14px;--gap:8px">${LEVELS.map((l, i) => `<span class="pill" style="background:${i <= li ? 'var(--accent-soft)' : 'transparent'};color:${i <= li ? 'var(--accent)' : 'var(--dim)'};border:1px solid ${i === li ? 'var(--accent)' : 'var(--line2)'}">${i <= li ? '✓' : '○'} ${l.name} · ${fmtN(l.at)}</span>`).join('')}</div>
+    </div>
+  </section>
+  <section class="stack">
+    <div class="between"><h2>Idea pipeline</h2></div>
+    <form data-submit="addIdea" class="form-row"><label class="sr" for="ideaTitle">Video title</label><input id="ideaTitle" name="title" class="input" placeholder="New video idea…" required style="flex:3 1 260px"><label class="sr" for="ideaTopic">Topic</label><input id="ideaTopic" name="topic" class="input" placeholder="Topic" style="flex:1 1 120px"><label class="sr" for="ideaDate">Target publish date</label><input id="ideaDate" name="date" type="date" class="input" style="flex:1 1 150px"><button class="btn primary" style="height:44px">Add idea</button></form>
+    <div class="scroll-x"><div style="display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;min-width:1150px">
+      ${stages.map((t, s) => { const cs = Y.ideas.filter(c => c.stage === s); return `<div class="col" style="min-height:260px"><div class="between" style="padding:2px 4px"><h3 style="font-size:12px;letter-spacing:.1em;font-weight:700">${t}</h3><span class="mono small muted">${cs.length}</span></div>
+        ${cs.map(c => `<article class="kcard"><div class="between"><span class="small strong" style="color:var(--accent);font-size:11px;letter-spacing:.06em">${esc(c.topic || '—')}</span>
+          <label class="sr" for="d-${c.id}">Publish date</label><input id="d-${c.id}" type="date" value="${esc(c.date)}" data-change="ideaDate" data-id="${c.id}" class="mono" style="background:transparent;border:0;color:var(--dim);font-size:11px;width:124px;color-scheme:dark"></div>
+          <div class="strong" style="line-height:1.4">${esc(c.title)}</div>
+          <div class="between"><button class="x" data-act="delIdea" data-id="${c.id}" aria-label="Delete idea">×</button><div class="flex" style="--gap:6px">${s > 0 ? `<button class="btn sm icon" data-act="moveIdea" data-id="${c.id}" data-d="-1" aria-label="Move back a stage">←</button>` : ''}${s < 4 ? `<button class="btn sm icon" style="color:var(--accent)" data-act="moveIdea" data-id="${c.id}" data-d="1" aria-label="Move forward a stage">→</button>` : ''}</div></div></article>`).join('')}
+      </div>`; }).join('')}
+    </div></div>
+  </section>
+  <section class="card">
+    <div class="between" style="margin-bottom:12px"><div class="flex"><button class="btn sm icon" data-act="cal" data-d="-1" aria-label="Previous month">‹</button><h2 style="min-width:150px;text-align:center">${base.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><button class="btn sm icon" data-act="cal" data-d="1" aria-label="Next month">›</button>${ui.calOffset ? '<button class="btn sm" data-act="cal" data-d="0">Today</button>' : ''}</div>
+      <span class="flex small muted"><span style="width:10px;height:10px;border-radius:3px;background:var(--accent)"></span>Ready (editing+)<span style="width:10px;height:10px;border-radius:3px;background:var(--accent-soft);margin-left:8px"></span>Planned</span></div>
+    <div class="scroll-x"><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:700px">
+      ${['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => `<div class="label" style="padding:4px 8px">${d}</div>`).join('')}
+      ${cells.map(d => { if (!d) return '<div></div>'; const key = y + '-' + String(mo + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); const t = key === todayKey;
+        return `<div style="min-height:88px;padding:8px;border-radius:10px;border:1px solid ${t ? 'var(--accent)' : 'rgba(255,255,255,.06)'};background:var(--card2);display:flex;flex-direction:column;gap:6px"><span class="mono small" style="color:${t ? 'var(--accent)' : 'var(--dim)'};font-weight:${t ? 700 : 400}">${d}</span>
+          ${Y.ideas.filter(c => c.date === key).map(c => `<span style="padding:4px 6px;border-radius:6px;font-size:11px;font-weight:600;line-height:1.3;background:${c.stage >= 3 ? 'var(--accent)' : 'var(--accent-soft)'};color:${c.stage >= 3 ? 'var(--on-accent)' : 'var(--accent)'}">${esc(c.title)}</span>`).join('')}</div>`; }).join('')}
+    </div></div>
+  </section>`;
+};
+
+function briefItems() { const r = { hot: 0, notable: 1, ref: 2 }; return S.intel.slice().sort((a, b) => r[a.imp] - r[b.imp] || b.date - a.date).slice(0, 3); }
+VIEWS.intel = () => {
+  const items = S.intel.filter(i => (ui.cat === 'All' || i.cat === ui.cat) && (ui.imp === 'all' || i.imp === ui.imp)).sort((a, b) => b.date - a.date);
+  const brief = briefItems();
+  return `
+  ${head(`${S.intel.length} items · stocked by Scout`, 'Intel feed')}
+  <section class="card hl">
+    <div class="between" style="margin-bottom:12px"><h2>Daily brief</h2><span class="mono small muted">${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()} · TOP ${brief.length}</span></div>
+    <ol class="clean grid" style="--min:280px;gap:12px">${brief.map((b, i) => `<li class="flex" style="align-items:flex-start;--gap:14px;padding:16px;border-radius:12px;background:rgba(11,13,18,.6);border:1px solid var(--line)"><span class="mono" style="font-size:20px;color:var(--accent)">${String(i + 1).padStart(2, '0')}</span><div><div class="strong" style="font-weight:700;line-height:1.4">${esc(b.title)}</div><div class="small" style="color:var(--muted);margin-top:4px">${esc(b.summary)}</div></div></li>`).join('') || '<li class="muted">Add intel to build the brief.</li>'}</ol>
+  </section>
+  <section class="row">
+    <div class="grow stack">
+      <div class="between">
+        <div class="seg" role="group" aria-label="Category">${['All', 'AI News', 'Industry Trends', 'Competitor Watch', 'Opportunities'].map(c => `<button type="button" class="${c === ui.cat ? 'on' : ''}" aria-pressed="${c === ui.cat}" data-act="intelCat" data-v="${c}">${c}</button>`).join('')}</div>
+        <div class="seg" role="group" aria-label="Importance">${[['all', 'All'], ['hot', 'Hot'], ['notable', 'Notable'], ['ref', 'Reference']].map(([v, l]) => `<button type="button" class="${v === ui.imp ? 'on' : ''}" aria-pressed="${v === ui.imp}" data-act="intelImp" data-v="${v}">${l}</button>`).join('')}</div>
+      </div>
+      ${items.map(i => { const [l, c] = impTag(i.imp); const src = /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(i.source) ? `<a href="https://${esc(i.source)}" target="_blank" rel="noopener noreferrer" class="mono" style="color:var(--muted)">${esc(i.source)} ↗</a>` : `<span class="mono">${esc(i.source)}</span>`;
+        return `<article class="card tight flex" style="align-items:flex-start;--gap:16px"><span class="tag ${c}">${l}</span><div style="flex:1;min-width:0"><h3 style="font-weight:700">${esc(i.title)}</h3>${i.summary ? `<p style="margin:6px 0 8px;color:var(--muted)">${esc(i.summary)}</p>` : ''}<div class="flex small muted" style="flex-wrap:wrap;--gap:6px 14px"><span class="strong" style="color:var(--text2)">${esc(i.cat)}</span>${src}<span>${ago(i.date)}</span></div></div><button class="x" data-act="delIntel" data-id="${i.id}" aria-label="Delete item">×</button></article>`; }).join('') || '<div class="empty">Nothing matches these filters.</div>'}
+    </div>
+    <form data-submit="addIntel" class="card side stack">
+      <h2>Add intel</h2>
+      <label class="field">Title<input name="title" class="input" placeholder="What did you find?" required></label>
+      <label class="field">Summary<textarea name="summary" class="input" placeholder="One or two lines on why it matters"></textarea></label>
+      <label class="field">Source<input name="source" class="input" placeholder="site.com/article"></label>
+      <div class="grid" style="--min:140px;gap:10px">
+        <label class="field">Category<select name="cat" class="input"><option>AI News</option><option>Industry Trends</option><option>Competitor Watch</option><option>Opportunities</option></select></label>
+        <label class="field">Importance<select name="imp" class="input"><option value="hot">Hot</option><option value="notable" selected>Notable</option><option value="ref">Reference</option></select></label>
+      </div>
+      <button class="btn primary">Add to feed</button>
+    </form>
+  </section>`;
+};
+
+VIEWS.notes = () => {
+  if (!S.notes.length) S.notes.push({ id: uid(), saved: Date.now(), body: '' });
+  let cur = S.notes.find(n => n.id === ui.noteId); if (!cur) { cur = S.notes[0]; ui.noteId = cur.id; }
+  const words = cur.body.trim() ? cur.body.trim().split(/\s+/).length : 0;
+  const preview = cur.body.split('\n').map(l => /^#\s/.test(l) ? `<h3 style="font-size:20px;font-weight:700;margin:12px 0 4px">${esc(l.slice(2))}</h3>` : /^-\s/.test(l) ? `<div class="flex" style="--gap:10px;color:var(--text2)"><span style="color:var(--accent)">•</span><span>${esc(l.slice(2))}</span></div>` : !l.trim() ? '<div style="height:8px"></div>' : `<p style="color:var(--text2)">${esc(l)}</p>`).join('');
+  return `
+  <section class="row">
+    <aside class="side stack" style="flex:1 1 260px;--gap:10px">
+      <div class="between"><h1 style="font-size:24px;margin:0">Notes</h1><button class="btn primary" data-act="newNote">+ New</button></div>
+      <ul class="clean stack" style="--gap:6px" id="noteList">${S.notes.slice().sort((a, b) => b.saved - a.saved).map(n => noteItem(n, n.id === cur.id)).join('')}</ul>
+    </aside>
+    <section class="grow" style="border-radius:16px;border:1px solid var(--line);background:var(--card);overflow:hidden;display:flex;flex-direction:column">
+      <div class="between" style="padding:12px 20px;border-bottom:1px solid var(--line)"><h2 id="noteHeading" style="font-size:18px">${esc(noteTitle(cur))}</h2>
+        <div class="flex"><div class="seg" role="group" aria-label="View"><button type="button" class="${ui.noteMode === 'edit' ? 'on' : ''}" aria-pressed="${ui.noteMode === 'edit'}" data-act="noteMode" data-v="edit">Write</button><button type="button" class="${ui.noteMode === 'preview' ? 'on' : ''}" aria-pressed="${ui.noteMode === 'preview'}" data-act="noteMode" data-v="preview">Preview</button></div><button class="x" data-act="delNote" data-id="${cur.id}" aria-label="Delete note">🗑</button></div></div>
+      ${ui.noteMode === 'edit' ? `<label class="sr" for="noteBody">Note text</label><textarea id="noteBody" data-input="noteBody" data-id="${cur.id}" placeholder="Start typing — # for a heading, - for a bullet" style="flex:1;min-height:540px;padding:22px 24px;border:0;background:transparent;color:var(--text);font-family:var(--mono);font-size:14px;line-height:1.75;resize:vertical">${esc(cur.body)}</textarea>`
+        : `<div style="min-height:540px;padding:22px 28px;display:flex;flex-direction:column;gap:6px">${preview || '<p class="muted">Nothing to preview.</p>'}</div>`}
+      <div class="between small muted" style="padding:12px 20px;border-top:1px solid var(--line)"><span class="flex" style="--gap:8px"><span class="dot" style="width:7px;height:7px"></span><span id="noteSaved">Saved ${ago(cur.saved)}</span></span><span class="mono" id="noteCount">${cur.body.length} characters · ${words} words</span></div>
+    </section>
+  </section>`;
+};
+const noteItem = (n, on) => { const snip = n.body.split('\n').filter(l => l.trim()).slice(1, 2).join(' ').replace(/^(#|-)\s/, ''); return `<li><button type="button" data-act="pickNote" data-id="${n.id}" aria-pressed="${on}" style="width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid ${on ? 'var(--accent-line)' : 'var(--line)'};background:${on ? 'var(--accent-wash)' : 'var(--card2)'}"><span class="strong" style="display:block">${esc(noteTitle(n))}</span><span class="small muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(snip || ago(n.saved))}</span></button></li>`; };
+
+const STACK = [
+  { id: 'hermes', mark: 'He', name: 'Hermes', tagline: 'The learning loop', features: ['Coworkers keep a short memory of you', 'They write and improve their own reusable skills, in a format other agent tools also read', 'Search across past chats', 'Hand subtasks to helper agents', 'Run scheduled jobs', 'Terminal chat and a Telegram connection'] },
+  { id: 'openbot', mark: 'Ob', name: 'OpenBot', tagline: 'Plug in any agent, safely', features: ['Any agent that speaks the AG-UI protocol can join as a coworker', 'Every action goes through one rules check', 'The check can refuse it, ask you first, or allow it', 'Everything is logged'] },
+  { id: 'opendots', mark: 'Od', name: 'OpenDots', tagline: 'Specialists and shared pages', features: ['Specialist coworkers', 'Spaces of pages', 'An older edit can’t silently overwrite a newer one'] },
+  { id: 'openmuse', mark: 'Om', name: 'OpenMuse', tagline: 'See and steer the work', features: ['Visible plans', 'Approval cards', 'Background tasks you can pause or retry', 'A queue for follow-up messages', 'Live view of each coworker’s browser — take control any time'] },
+  { id: 'cua', mark: 'Cu', name: 'Cua Driver', tagline: 'Desktop control in the background', features: ['Reads native apps through their accessibility tree, plus screenshots', 'Clicks and types on on-screen elements, not raw pixel guesses', 'Works in background windows without taking over your cursor', 'Refuses instead of disturbing your desktop when it can’t stay in the background', 'Usable from any agent via CLI or MCP · MIT-licensed', 'Web pages stay with the OpenMuse browser view'] }
+];
+VIEWS.stack = () => {
+  const on = STACK.filter(p => !S.stackOff[p.id]).length;
+  const tone = { ALLOW: 'accent', ASK: 'warn', REFUSE: '' };
+  const pending = S.approvals.filter(a => a.state === 'pending');
+  return `
+  ${head(`${on} of ${STACK.length} contributions in use`, 'Coworker stack')}
+  <p class="muted" style="margin-top:-12px;max-width:640px">What each project adds to Mission Control. Switch one off to note it isn’t part of your build.</p>
+  <section class="grid" style="--min:340px" aria-label="Contributions">
+    ${STACK.map(p => { const off = !!S.stackOff[p.id]; return `<article class="card stack" style="--gap:14px;${off ? 'opacity:.5' : ''}">
+      <div class="flex" style="--gap:14px"><span class="avatar mono" style="width:46px;height:46px;background:var(--accent-soft);color:var(--accent);font-weight:500">${p.mark}</span><div><h2 style="font-size:18px">${p.name}</h2><div class="small muted">${p.tagline}</div></div></div>
+      <ul class="clean stack" style="--gap:8px;flex:1">${p.features.map(f => `<li class="flex" style="align-items:flex-start;color:var(--text2)"><span style="color:var(--accent);font-weight:700">✓</span><span>${f}</span></li>`).join('')}</ul>
+      <label class="between" style="min-height:44px;padding-top:12px;border-top:1px solid var(--line);cursor:pointer"><span class="small strong" style="color:var(--muted)">Use in Mission Control</span><input type="checkbox" data-change="stackToggle" data-id="${p.id}" ${off ? '' : 'checked'} style="width:20px;height:20px;accent-color:var(--accent)"></label>
+    </article>`; }).join('')}
+  </section>
+  <section class="card stack" style="--gap:16px">
+    <div><h2>How one action flows</h2><p class="small muted" style="margin-top:4px">A coworker plans, every step passes the rules check, risky steps wait for you, and everything lands in the log.</p></div>
+    <div class="flex" style="flex-wrap:wrap;align-items:stretch">
+      ${[['1 · PLAN', 'Visible plan', 'OpenMuse'], ['2 · RULES CHECK', 'Allow · Ask you · Refuse', 'OpenBot'], ['3 · ACT', 'Browser or desktop app', 'OpenMuse live view · Cua Driver'], ['4 · REMEMBER', 'Logged, saved as a skill', 'OpenBot log · Hermes skills']].map((s, i) => `${i ? '<span aria-hidden="true" class="flex muted" style="font-size:18px">→</span>' : ''}<div class="sub" style="flex:1 1 200px;${i === 1 ? 'border-color:var(--accent)' : ''}"><p class="label">${s[0]}</p><div class="strong" style="margin-top:6px">${s[1]}</div><div class="small muted">${s[2]}</div></div>`).join('')}
+    </div>
+  </section>
+  <section class="row">
+    <div class="side stack" style="flex:1 1 420px">
+      ${pending.map(a => `<div class="card stack" style="border-color:rgba(245,180,84,.4);background:rgba(245,180,84,.05)"><div class="between"><h2>Approval card</h2><span class="tag warn">WAITING ON YOU</span></div>
+        <p style="color:var(--text2)"><b style="color:#fff">${esc(a.who)}</b> wants to ${esc(a.what)}.</p><div class="mono small" style="padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.25);color:var(--muted)">rule: ${esc(a.rule)}</div>
+        <div class="flex"><button class="btn primary" style="flex:1" data-act="approve" data-id="${a.id}">Approve</button><button class="btn" style="flex:1" data-act="deny" data-id="${a.id}">Deny</button></div></div>`).join('') || '<div class="empty">No approvals waiting.</div>'}
+      <form data-submit="addApproval" class="card tight stack"><p class="label">Simulate an approval request</p><div class="form-row"><label class="sr" for="apWho">Agent</label><select id="apWho" name="who" class="input" style="flex:0 0 120px">${S.agents.map(a => `<option>${esc(a.name)}</option>`).join('')}</select><label class="sr" for="apWhat">Action</label><input id="apWhat" name="what" class="input" placeholder="e.g. send the invoice to Oakline" required></div><button class="btn sm">Request approval</button></form>
+    </div>
+    <div class="card grow"><div class="between" style="margin-bottom:8px"><h2>Action log</h2><span class="small muted">Every action, every outcome</span></div>
+      <ol class="clean feed">${S.actionLog.slice(0, 15).map(l => `<li style="align-items:center"><span class="time">${clock(l.t)}</span><span class="tag ${tone[l.outcome]}" style="width:72px;justify-content:center">${l.outcome}</span><span style="flex:1;min-width:0;color:var(--text2)"><b class="strong">${esc(l.who)}</b> ${esc(l.what)}</span></li>`).join('') || '<li class="muted">Nothing logged yet.</li>'}</ol></div>
+  </section>`;
+};
+
+/* ---------- actions ---------- */
+const byId = (arr, id) => arr.find(x => x.id === id);
+const agentByName = n => S.agents.find(a => a.name === n);
+const A = {
+  openSettings() { const f = fields($('#settingsForm')); f.userName.value = S.settings.name; f.goalMrr.value = S.settings.goalMrr; f.goalDate.value = S.settings.goalDate; ui.tmpAccent = S.settings.accent; renderSwatches(); $('#settings').showModal(); },
+  saveSettings(el, e) { e.preventDefault(); const f = fields($('#settingsForm')); S.settings.name = f.userName.value.trim(); S.settings.goalMrr = Math.max(1, Number(f.goalMrr.value) || 1); S.settings.goalDate = f.goalDate.value || S.settings.goalDate; S.settings.accent = ui.tmpAccent || S.settings.accent; applyAccent(); save(); $('#settings').close(); render(); toast('Settings saved'); },
+  pickSwatch(el) { ui.tmpAccent = el.dataset.v; renderSwatches(); document.documentElement.style.setProperty('--accent', ui.tmpAccent); },
+  exportData() { const b = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'mission-control-backup-' + isoDay(new Date()) + '.json'; a.click(); URL.revokeObjectURL(a.href); },
+  resetSample() { if (!confirm('Replace everything with the sample data?')) return; S = seed(); save(); applyAccent(); $('#settings').close(); render(); toast('Sample data loaded'); },
+  clearAll() { if (!confirm('Clear all data and start empty? Export a backup first if you want to keep it.')) return; const keep = S.settings; S = emptyState(); S.settings = keep; save(); $('#settings').close(); render(); toast('Started fresh'); },
+  delPriority(el) { S.priorities = S.priorities.filter(p => p.id !== el.dataset.id); save(); render(); },
+  toggleAddProject() { ui.addingProject = !ui.addingProject; render(); if (ui.addingProject) $('#projTitle')?.focus(); },
+  editProject(el) { ui.editingProject = el.dataset.id; render(); },
+  cancelEditProject() { ui.editingProject = null; render(); },
+  delProject(el) { const p = byId(S.projects, el.dataset.id); if (!confirm('Delete “' + p.title + '”?')) return; S.projects = S.projects.filter(x => x !== p); save(); render(); },
+  moveProject(el) { const p = byId(S.projects, el.dataset.id); p.col = Math.max(0, Math.min(2, p.col + Number(el.dataset.d))); log('You', `moved “${p.title}” to ${['Backlog', 'In Progress', 'Done'][p.col]}`); save(); render(); },
+  setPhase(el) { S.phases.forEach(p => p.current = p.id === el.dataset.id); save(); render(); },
+  pickAgent(el) { ui.agent = el.dataset.id; render(); },
+  togglePause(el) { const a = byId(S.agents, el.dataset.id); ui.paused[a.id] = !ui.paused[a.id]; a.log.unshift({ t: Date.now(), x: ui.paused[a.id] ? 'Paused by you' : 'Resumed' }); save(); render(); },
+  toggleControl(el) { const a = byId(S.agents, el.dataset.id); const taking = ui.control !== a.id; ui.control = taking ? a.id : null; a.log.unshift({ t: Date.now(), x: taking ? 'You took control of the browser' : 'You handed the browser back' }); save(); render(); },
+  stepNext(el) { const a = byId(S.agents, el.dataset.id); if (a.session.cur < a.session.steps.length - 1) { a.session.cur++; a.log.unshift({ t: Date.now(), x: 'Started: ' + a.session.steps[a.session.cur] }); } save(); render(); },
+  stepBack(el) { const a = byId(S.agents, el.dataset.id); if (a.session.cur > 0) a.session.cur--; save(); render(); },
+  taskAct(el) { const t = byId(S.tasks, el.dataset.id); t.state = t.state === 'running' ? 'paused' : 'running'; if (t.note && t.state === 'running') t.note = 'retrying'; save(); render(); },
+  delTask(el) { S.tasks = S.tasks.filter(t => t.id !== el.dataset.id); save(); render(); },
+  delQueue(el) { S.queue = S.queue.filter(q => q.id !== el.dataset.id); save(); render(); },
+  delDecision(el) { S.decisions = S.decisions.filter(d => d.id !== el.dataset.id); save(); render(); },
+  toggleMeeting(el) { ui.meetingOpen = ui.meetingOpen === el.dataset.id ? '' : el.dataset.id; render(); },
+  delMeeting(el) { if (!confirm('Delete this meeting?')) return; S.meetings = S.meetings.filter(m => m.id !== el.dataset.id); save(); render(); },
+  delAction(el) { const m = byId(S.meetings, el.dataset.mid); m.actions.splice(Number(el.dataset.i), 1); save(); render(); },
+  clientFilter(el) { ui.clientFilter = el.dataset.v; render(); },
+  delClient(el) { const c = byId(S.clients, el.dataset.id); if (!confirm('Delete ' + c.name + '?')) return; S.clients = S.clients.filter(x => x !== c); save(); render(); },
+  closeMonth() { const key = monthKey(new Date()); const ex = S.history.find(h => h.m === key); if (ex) ex.v = mrr(); else S.history.push({ m: key, v: mrr() }); save(); render(); toast('Saved ' + monthName(key) + ' at ' + k(mrr()) + ' — it stays in the chart after the month ends'); },
+  moveIdea(el) { const c = byId(S.youtube.ideas, el.dataset.id); c.stage = Math.max(0, Math.min(4, c.stage + Number(el.dataset.d))); if (c.stage === 4) log('Quill', `published “${c.title}”`); save(); render(); },
+  delIdea(el) { S.youtube.ideas = S.youtube.ideas.filter(c => c.id !== el.dataset.id); save(); render(); },
+  cal(el) { const d = Number(el.dataset.d); ui.calOffset = d === 0 ? 0 : ui.calOffset + d; render(); },
+  intelCat(el) { ui.cat = el.dataset.v; render(); },
+  intelImp(el) { ui.imp = el.dataset.v; render(); },
+  delIntel(el) { S.intel = S.intel.filter(i => i.id !== el.dataset.id); save(); render(); },
+  newNote() { const n = { id: uid(), saved: Date.now(), body: '' }; S.notes.unshift(n); ui.noteId = n.id; ui.noteMode = 'edit'; save(); render(); $('#noteBody')?.focus(); },
+  pickNote(el) { ui.noteId = el.dataset.id; render(); },
+  noteMode(el) { ui.noteMode = el.dataset.v; render(); },
+  delNote(el) { if (!confirm('Delete this note?')) return; S.notes = S.notes.filter(n => n.id !== el.dataset.id); ui.noteId = null; save(); render(); },
+  approve(el) { decide(el.dataset.id, true); },
+  deny(el) { decide(el.dataset.id, false); }
+};
+function decide(id, ok) { const a = byId(S.approvals, id); a.state = ok ? 'approved' : 'denied'; S.actionLog.unshift({ t: Date.now(), outcome: 'ASK', who: a.who, what: a.what + (ok ? ' — approved' : ' — denied by you') }); log(a.who, (ok ? 'got approval to ' : 'was denied: ') + a.what); save(); render(); }
+
+const C = {
+  togglePriority(el) { const p = byId(S.priorities, el.dataset.id); p.done = el.checked; if (p.done) log('You', `completed “${p.text}”`); save(); render(); },
+  toggleMilestone(el) { const ph = byId(S.phases, el.dataset.phase), m = byId(ph.ms, el.dataset.id); m.done = el.checked; if (m.done) log('You', `hit milestone “${m.label}”`); save(); render(); },
+  agentStatus(el) { const a = byId(S.agents, el.dataset.id); a.status = el.value; a.last = Date.now(); if (a.status !== 'Offline' && !a.session) a.session = { url: 'about:blank', title: 'Waiting for a task', target: 'idle', block: 0, steps: ['Waiting for a task'], cur: 0 }; save(); render(); },
+  toggleAgenda(el) { const m = byId(S.meetings, el.dataset.mid), a = byId(m.agenda, el.dataset.id); a.done = el.checked; save(); render(); },
+  clientStatus(el) { const c = byId(S.clients, el.dataset.id); c.status = el.value; log('Ledger', `marked ${c.name} as ${c.status}`); save(); render(); },
+  setSubs(el) { S.youtube.subs = Math.max(0, parseInt(el.value, 10) || 0); save(); render(); },
+  ideaDate(el) { byId(S.youtube.ideas, el.dataset.id).date = el.value; save(); render(); },
+  stackToggle(el) { S.stackOff[el.dataset.id] = !el.checked; save(); render(); }
+};
+const F = {
+  addPriority(f) { const t = f.text.value.trim(); if (!t) return; S.priorities.push({ id: uid(), text: t, tag: f.tag.value, done: false }); save(); render(); $('#newPriority')?.focus(); },
+  addProject(f) { S.projects.push({ id: uid(), title: f.title.value.trim(), desc: f.desc.value.trim(), priority: f.priority.value, col: Number(f.col.value), created: Date.now() }); log('You', `added project “${f.title.value.trim()}”`); ui.addingProject = false; save(); render(); },
+  saveProject(f) { const p = byId(S.projects, f.dataset.id); p.title = f.title.value.trim(); p.desc = f.desc.value.trim(); p.priority = f.priority.value; ui.editingProject = null; save(); render(); },
+  addMilestone(f) { const t = f.label.value.trim(); if (!t) return; byId(S.phases, f.dataset.phase).ms.push({ id: uid(), label: t, done: false }); save(); render(); },
+  sendTask(f) { const t = f.text.value.trim(); if (!t) return; const a = byId(S.agents, f.dataset.id); a.log.unshift({ t: Date.now(), x: 'Task received: ' + t }); a.last = Date.now(); if (a.status === 'Offline') a.status = 'Busy'; if (!a.session) a.session = { url: 'about:blank', title: 'Working on: ' + t, target: 'starting', block: 0, steps: [t], cur: 0 };
+    log('You', `sent ${a.name} a task: ${t}`); S.actionLog.unshift({ t: Date.now(), outcome: 'ALLOW', who: a.name, what: 'accepted task: ' + t }); save(); render(); },
+  addTask(f) { const t = f.name.value.trim(); if (!t) return; const a = byId(S.agents, ui.agent); S.tasks.unshift({ id: uid(), name: t, who: a.name, state: 'running' }); save(); render(); },
+  addQueue(f) { const t = f.text.value.trim(); if (!t) return; S.queue.push({ id: uid(), to: byId(S.agents, ui.agent).name, text: t }); save(); render(); },
+  addDecision(f) { S.decisions.unshift({ id: uid(), date: Date.now(), q: f.q.value.trim(), d: f.d.value.trim(), who: f.who.value.trim() || '—' }); save(); render(); },
+  addMeeting(f) { const start = new Date(f.start.value).getTime(); if (isNaN(start)) return; const m = { id: uid(), title: f.title.value.trim(), start, dur: Math.max(5, Number(f.dur.value) || 30), type: f.type.value, attendees: f.attendees.value.trim() || '—', agenda: [], notes: '', actions: [] }; S.meetings.push(m); ui.meetingOpen = m.id; save(); render(); toast('Meeting added'); },
+  addAgenda(f) { const t = f.text.value.trim(); if (!t) return; byId(S.meetings, f.dataset.mid).agenda.push({ id: uid(), text: t, done: false }); save(); render(); document.getElementById('ag-' + f.dataset.mid)?.focus(); },
+  addAction(f) { const t = f.text.value.trim(); if (!t) return; byId(S.meetings, f.dataset.mid).actions.push(t); save(); render(); document.getElementById('ac-' + f.dataset.mid)?.focus(); },
+  addClient(f) { const now = new Date(); S.clients.push({ id: uid(), name: f.name.value.trim(), v: Math.max(0, Number(f.v.value) || 0), status: f.status.value, since: f.status.value === 'Active' ? now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—' }); log('You', `added ${f.name.value.trim()} as a client`); save(); render(); },
+  addIdea(f) { S.youtube.ideas.push({ id: uid(), title: f.title.value.trim(), topic: (f.topic.value.trim() || 'GENERAL').toUpperCase(), stage: 0, date: f.date.value }); save(); render(); $('#ideaTitle')?.focus(); },
+  addIntel(f) { S.intel.unshift({ id: uid(), title: f.title.value.trim(), summary: f.summary.value.trim(), source: f.source.value.trim().replace(/^https?:\/\//, '') || 'You', cat: f.cat.value, imp: f.imp.value, date: Date.now() }); log('You', 'added intel: ' + f.title.value.trim()); save(); render(); },
+  addApproval(f) { S.approvals.push({ id: uid(), who: f.who.value, what: f.what.value.trim(), rule: 'sensitive action → ask first', state: 'pending' }); save(); render(); }
+};
+const I = {
+  meetingNotes(el) { byId(S.meetings, el.dataset.mid).notes = el.value; save(); },
+  noteBody(el) { const n = byId(S.notes, el.dataset.id); n.body = el.value; n.saved = Date.now(); save();
+    const w = n.body.trim() ? n.body.trim().split(/\s+/).length : 0; $('#noteCount').textContent = `${n.body.length} characters · ${w} words`; $('#noteSaved').textContent = 'Saved just now'; $('#noteHeading').textContent = noteTitle(n); }
+};
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || !A[el.dataset.act]) return; A[el.dataset.act](el, e); });
+document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el && C[el.dataset.change]) C[el.dataset.change](el, e); });
+document.addEventListener('input', e => { const el = e.target.closest('[data-input]'); if (el && I[el.dataset.input]) I[el.dataset.input](el, e); });
+document.addEventListener('focusout', e => { if (e.target.id === 'noteBody') { const list = $('#noteList'); if (list) list.innerHTML = S.notes.slice().sort((a, b) => b.saved - a.saved).map(n => noteItem(n, n.id === ui.noteId)).join(''); } });
+const fields = f => { const w = { dataset: f.dataset }; [...f.elements].forEach(el => { if (el.name) w[el.name] = el; }); return w; };
+document.addEventListener('submit', e => { const f = e.target.closest('[data-submit]'); if (!f) return; e.preventDefault(); F[f.dataset.submit](fields(f), e); });
+window.addEventListener('hashchange', () => { closeResults(); render(); window.scrollTo(0, 0); });
+$('#importFile').addEventListener('change', e => { const file = e.target.files[0]; if (!file) return; const r = new FileReader();
+  r.onload = () => { try { const d = JSON.parse(r.result); if (d.v !== 1 || !d.settings) throw 0; S = d; save(); applyAccent(); $('#settings').close(); render(); toast('Backup imported'); } catch (err) { toast('That file isn’t a Mission Control backup.'); } };
+  r.readAsText(file); e.target.value = ''; });
+function renderSwatches() { $('#swatches').innerHTML = ['#2DD4BF', '#60A5FA', '#F5B454', '#A78BFA', '#F472B6', '#4ADE80'].map(c => `<button type="button" data-act="pickSwatch" data-v="${c}" aria-label="Accent ${c}" aria-pressed="${c === ui.tmpAccent}" style="width:36px;height:36px;border-radius:10px;background:${c};border:2px solid ${c === ui.tmpAccent ? '#fff' : 'transparent'}"></button>`).join('') + `<label class="sr" for="customAccent">Custom accent</label><input id="customAccent" type="color" value="${ui.tmpAccent}" style="width:44px;height:36px;border:0;background:transparent">`; $('#customAccent').addEventListener('input', ev => { ui.tmpAccent = ev.target.value; document.documentElement.style.setProperty('--accent', ui.tmpAccent); }); }
+$('#settings').addEventListener('close', () => applyAccent());
+
+/* ---------- search ---------- */
+const q = $('#q'), results = $('#results');
+let hits = [], hl = 0;
+function closeResults() { results.hidden = true; hits = []; }
+function search(term) {
+  const t = term.trim().toLowerCase(); if (!t) return closeResults();
+  const m = s => String(s || '').toLowerCase().includes(t);
+  hits = [
+    ...S.projects.filter(p => m(p.title) || m(p.desc)).map(p => ({ kind: 'Project', label: p.title, go: '#projects' })),
+    ...S.notes.filter(n => m(n.body)).map(n => ({ kind: 'Note', label: noteTitle(n), go: '#notes', note: n.id })),
+    ...S.meetings.filter(x => m(x.title) || m(x.notes)).map(x => ({ kind: 'Meeting', label: x.title, go: '#meetings', meeting: x.id })),
+    ...S.intel.filter(i => m(i.title) || m(i.summary)).map(i => ({ kind: 'Intel', label: i.title, go: '#intel' })),
+    ...S.clients.filter(c => m(c.name)).map(c => ({ kind: 'Client', label: c.name, go: '#revenue' })),
+    ...S.youtube.ideas.filter(c => m(c.title)).map(c => ({ kind: 'Video', label: c.title, go: '#youtube' })),
+    ...S.agents.filter(a => m(a.name) || m(a.role)).map(a => ({ kind: 'Agent', label: a.name + ' · ' + a.role, go: '#agents', agent: a.id })),
+    ...S.priorities.filter(p => m(p.text)).map(p => ({ kind: 'Priority', label: p.text, go: '#dashboard' })),
+    ...S.decisions.filter(d => m(d.q) || m(d.d)).map(d => ({ kind: 'Decision', label: d.q, go: '#agents' }))
+  ].slice(0, 12);
+  hl = 0;
+  results.innerHTML = hits.length ? hits.map((h, i) => `<button type="button" data-hit="${i}" class="${i === hl ? 'hl' : ''}"><span class="tag">${h.kind}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.label)}</span></button>`).join('') : '<div class="small muted" style="padding:10px">No matches.</div>';
+  results.hidden = false;
+}
+function openHit(i) { const h = hits[i]; if (!h) return; if (h.note) { ui.noteId = h.note; ui.noteMode = 'edit'; } if (h.meeting) ui.meetingOpen = h.meeting; if (h.agent) ui.agent = h.agent; q.value = ''; closeResults(); if (location.hash === h.go) render(); else location.hash = h.go; }
+q.addEventListener('input', () => search(q.value));
+q.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { q.value = ''; closeResults(); q.blur(); }
+  if (results.hidden || !hits.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hl = (hl + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length; [...results.children].forEach((c, i) => c.classList.toggle('hl', i === hl)); }
+  if (e.key === 'Enter') { e.preventDefault(); openHit(hl); }
+});
+results.addEventListener('click', e => { const b = e.target.closest('[data-hit]'); if (b) openHit(Number(b.dataset.hit)); });
+document.addEventListener('click', e => { if (!e.target.closest('.search')) closeResults(); });
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); q.focus(); q.select(); } });
+if (!/Mac|iPhone|iPad/.test(navigator.platform)) $('.search kbd').textContent = 'Ctrl K';
+
+/* ---------- live ticks ---------- */
+let lastArchived = S.meetings.filter(ended).length;
+setInterval(() => {
+  const now = Date.now();
+  document.querySelectorAll('[data-cd]').forEach(el => { const d = Number(el.dataset.cd) - now; el.textContent = el.dataset.plain ? countdown(d) : (d > 0 ? 'in ' + countdown(d) : 'LIVE'); });
+  const ld = $('#liveDate'); if (ld) ld.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + hm(now);
+  const arch = S.meetings.filter(ended).length;
+  if (arch !== lastArchived) { lastArchived = arch; const a = document.activeElement; if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render(); }
+}, 20000);
+
+applyAccent();
+render();
+})();
+</script>
+</body>
+</html>
