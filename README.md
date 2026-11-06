@@ -68,6 +68,25 @@ You can send one event or an array of them. To find out whether you approved som
 
 The live browser view shows whatever an agent reports in `session`. Streaming a real browser picture needs OpenMuse.
 
+### A local LLM agent (Ollama, Podman AI Lab)
+
+`examples/llm-agent.js` turns a coworker into an agent backed by a model on your computer. Send it a task from **Command Center → Send task** and it asks the model, shows its progress, and saves the answer to **Notes**. It works with any server that speaks the OpenAI-style `/v1/chat/completions` API.
+
+```sh
+# Ollama (default address http://localhost:11434/v1)
+node examples/llm-agent.js
+
+# Podman AI Lab model service: use the port it shows for the service
+LLM_URL=http://localhost:34067/v1 LLM_MODEL=<model name> node examples/llm-agent.js
+
+# One task, then exit
+node examples/llm-agent.js "Draft a cold email to a dentist"
+```
+
+Other settings: `AGENT_NAME` (default `Scout`; a new name adds a new coworker), `AGENT_ROLE`, `SYSTEM` (system prompt), `LLM_API_KEY`, `MC_URL`. To find a server's model names, open `<LLM_URL>/models`.
+
+To run Ollama with Podman: `podman run -d --name ollama -p 11434:11434 -v ollama:/root/.ollama docker.io/ollama/ollama`, then `podman exec ollama ollama pull llama3.2`.
+
 ### Other ways to host
 
 - **GitHub Pages:** repo Settings → Pages → `main` / root. It serves `index.html` only, so data stays in each browser and the agent API isn't available.
