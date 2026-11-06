@@ -386,7 +386,7 @@ async function pollEvents() {
     setStatus('Saved to this computer');
   } catch (e) { setStatus('Server unreachable — saving in browser', true); }
 }
-const ui = { cat: 'All', imp: 'all', clientFilter: 'All', agent: 'scout', control: null, paused: {}, meetingOpen: null, editingProject: null, addingProject: false,
+const ui = { cat: 'All', imp: 'all', clientFilter: 'All', agent: 'scout', control: null, paused: {}, meetingOpen: null, stackOpen: null, editingProject: null, addingProject: false,
   noteId: null, noteMode: 'edit', calOffset: 0 };
 const log = (who, what) => { S.activity.unshift({ t: Date.now(), who, what }); S.activity = S.activity.slice(0, 60); };
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
@@ -830,13 +830,20 @@ VIEWS.stack = () => {
   const pending = S.approvals.filter(a => a.state === 'pending');
   return `
   ${head(`${on} of ${STACK.length} contributions in use`, 'Coworker stack')}
-  <p class="muted" style="margin-top:-12px;max-width:640px">What each project adds to Mission Control. Switch one off to note it isn’t part of your build.</p>
-  <section class="grid" style="--min:340px" aria-label="Contributions">
-    ${STACK.map(p => { const off = !!S.stackOff[p.id]; return `<article class="card stack" style="--gap:14px;${off ? 'opacity:.5' : ''}">
-      <div class="flex" style="--gap:14px"><span class="avatar mono" style="width:46px;height:46px;background:var(--accent-soft);color:var(--accent);font-weight:500">${p.mark}</span><div><h2 style="font-size:18px">${p.name}</h2><div class="small muted">${p.tagline}</div></div></div>
-      <ul class="clean stack" style="--gap:8px;flex:1">${p.features.map(f => `<li class="flex" style="align-items:flex-start;color:var(--text2)"><span style="color:var(--accent);font-weight:700">✓</span><span>${f}</span></li>`).join('')}</ul>
+  <p class="muted" style="margin-top:-12px;max-width:640px">What each project adds to Mission Control. Click a name to see what it does, or switch it off to note it isn’t part of your build.</p>
+  <section class="card" style="padding:0;overflow:hidden" aria-label="Contributions">
+    ${STACK.map((p, i) => { const off = !!S.stackOff[p.id], open = ui.stackOpen === p.id; return `<article style="${i ? 'border-top:1px solid var(--line);' : ''}${open ? 'background:var(--accent-wash)' : ''}">
+      <button type="button" data-act="toggleStack" data-id="${p.id}" aria-expanded="${open}" aria-controls="stack-${p.id}" style="width:100%;display:flex;align-items:center;gap:14px;padding:14px 20px;border:0;background:transparent;text-align:left;cursor:pointer;${off ? 'opacity:.5' : ''}">
+        <span class="avatar mono" style="width:40px;height:40px;background:var(--accent-soft);color:var(--accent);font-weight:500">${p.mark}</span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:16px;font-weight:700">${p.name}</span><span class="small muted">${p.tagline}</span></span>
+        ${off ? '<span class="tag">OFF</span>' : ''}
+        <span aria-hidden="true" style="transform:${open ? 'rotate(180deg)' : 'none'};color:var(--dim)">▾</span>
+      </button>
+      ${open ? `<div id="stack-${p.id}" class="stack" style="--gap:14px;padding:0 20px 16px 74px">
+      <ul class="clean stack" style="--gap:8px">${p.features.map(f => `<li class="flex" style="align-items:flex-start;color:var(--text2)"><span style="color:var(--accent);font-weight:700">✓</span><span>${f}</span></li>`).join('')}</ul>
       ${p.id === 'opendots' ? (() => { const sp = S.agents.filter(a => a.specialist); return `<div class="stack" style="--gap:8px"><p class="label">Your specialists · ${sp.length}</p>${sp.map(a => `<button type="button" class="sub flex" data-act="openAgent" data-id="${a.id}" style="text-align:left;--gap:10px;cursor:pointer"><span class="avatar" style="width:30px;height:30px;font-size:13px">${esc(a.name[0])}</span><span style="flex:1;min-width:0"><span class="strong">${esc(a.name)}</span> <span class="small muted">· ${esc(a.role)}</span></span><span class="flex small" style="--gap:6px;color:var(--muted)"><span class="dot" style="background:${statusDot(a.status)}"></span>${a.status}</span></button>`).join('') || '<div class="small muted">None yet. Mark a coworker as a specialist in Command Center.</div>'}</div>`; })() : ''}
       <label class="between" style="min-height:44px;padding-top:12px;border-top:1px solid var(--line);cursor:pointer"><span class="small strong" style="color:var(--muted)">Use in Mission Control</span><input type="checkbox" data-change="stackToggle" data-id="${p.id}" ${off ? '' : 'checked'} style="width:20px;height:20px;accent-color:var(--accent)"></label>
+      </div>` : ''}
     </article>`; }).join('')}
   </section>
   <section class="card stack" style="--gap:16px">
@@ -875,6 +882,7 @@ const A = {
   moveProject(el) { const p = byId(S.projects, el.dataset.id); p.col = Math.max(0, Math.min(2, p.col + Number(el.dataset.d))); log('You', `moved “${p.title}” to ${['Backlog', 'In Progress', 'Done'][p.col]}`); save(); render(); },
   setPhase(el) { S.phases.forEach(p => p.current = p.id === el.dataset.id); save(); render(); },
   pickAgent(el) { ui.agent = el.dataset.id; render(); },
+  toggleStack(el) { ui.stackOpen = ui.stackOpen === el.dataset.id ? null : el.dataset.id; render(); },
   openAgent(el) { ui.agent = el.dataset.id; if (location.hash === '#agents') render(); else location.hash = '#agents'; },
   togglePause(el) { const a = byId(S.agents, el.dataset.id); ui.paused[a.id] = !ui.paused[a.id]; a.log.unshift({ t: Date.now(), x: ui.paused[a.id] ? 'Paused by you' : 'Resumed' }); save(); render(); },
   toggleControl(el) { const a = byId(S.agents, el.dataset.id); const taking = ui.control !== a.id; ui.control = taking ? a.id : null; a.log.unshift({ t: Date.now(), x: taking ? 'You took control of the browser' : 'You handed the browser back' }); save(); render(); },
