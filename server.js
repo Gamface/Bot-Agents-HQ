@@ -97,9 +97,10 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/events' && req.method === 'POST') {
       const body = await readBody(req);
       const list = Array.isArray(body) ? body : [body];
+      // Check the whole batch first, so a rejected request saves nothing.
+      if (list.some(e => !e || !EVENT_TYPES.has(e.type))) return send(res, 400, { error: 'Unknown event type. Use one of: ' + [...EVENT_TYPES].join(', ') });
       const added = [];
       for (const e of list) {
-        if (!e || !EVENT_TYPES.has(e.type)) return send(res, 400, { error: 'Unknown event type. Use one of: ' + [...EVENT_TYPES].join(', ') });
         const ev = { ...e, id: nextEventId++, at: new Date().toISOString() };
         events.push(ev); added.push(ev.id);
       }
