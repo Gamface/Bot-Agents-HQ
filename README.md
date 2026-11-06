@@ -15,7 +15,7 @@ A personal command center for running a small team of AI agents. Run it on your 
 | **YouTube** | Subscriber level with XP bar and milestones, 5-stage idea pipeline, monthly content calendar |
 | **Intel** | Daily brief (top 3), feed with category and importance filters, add form |
 | **Notes** | Multiple notes, autosave, character/word count, Write / Preview (`#` headings, `-` bullets) |
-| **Stack** | The coworker stack (Hermes, OpenBot, OpenDots, OpenMuse, Cua Driver), how an action flows, approval cards and the action log |
+| **Stack** | The coworker stack (Hermes, OpenBot, OpenDots, OpenMuse, Cua Driver) with your specialist coworkers listed under OpenDots, how an action flows, approval cards and the action log |
 
 Also: **⌘K / Ctrl+K** searches everything, and **Settings** (gear icon) sets your name, accent color, revenue goal and goal date.
 
@@ -56,7 +56,7 @@ curl -X POST http://localhost:4000/api/events -H 'Content-Type: application/json
 | `type` | Fields | Shows up in |
 |---|---|---|
 | `activity` | `who`, `what` | Dashboard activity feed |
-| `agent` | `agent` (name), optional `status` (Online/Busy/Offline), `log`, `role`, `model`, `caps`, `session` {`url`,`title`,`target`,`steps`,`cur`} | Command Center: an unknown name adds a new coworker |
+| `agent` | `agent` (name), optional `status` (Online/Busy/Offline), `log`, `role`, `model`, `caps`, `specialist` (true/false), `session` {`url`,`title`,`target`,`steps`,`cur`} | Command Center: an unknown name adds a new coworker |
 | `intel` | `title`, `summary`, `source`, `cat`, `imp` (hot/notable/ref) | Intel feed and daily brief |
 | `approval` | `who`, `what`, `rule`, `ref` | Approval card on the Stack screen |
 | `action` | `who`, `outcome` (ALLOW/ASK/REFUSE), `what` | Stack action log |

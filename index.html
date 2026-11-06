@@ -239,15 +239,15 @@ function seed() {
         desc: 'Runs the daily brief, triages requests and hands work to the other agents.', caps: ['Daily brief', 'Task routing', 'Calendar', 'Telegram'],
         session: { url: 'calendar.example.com/week', title: 'This week', target: 'checking Thu 2:00', block: 1, steps: ['Read today’s calendar', 'Find a 30-min slot with Northwind', 'Draft the reschedule message', 'Ask you before sending'], cur: 1 },
         log: [{ t: now - 2.5 * H, x: 'Moved “Client portal v2” to In Progress' }, { t: now - 4 * H, x: 'Posted morning brief to Telegram' }] },
-      { id: 'scout', name: 'Scout', role: 'Research', status: 'Busy', model: 'Claude Sonnet', last: now,
+      { id: 'scout', name: 'Scout', role: 'Research & intel', specialist: true, status: 'Busy', model: 'Claude Sonnet', last: now,
         desc: 'Watches competitors and industry news, and keeps the intel feed stocked.', caps: ['Web research', 'Competitor watch', 'Intel feed', 'Lead scoring'],
         session: { url: 'rival-one.example.com/pricing', title: 'Plans & pricing', target: 'reading price', block: 1, steps: ['Open 6 competitor pricing pages', 'Capture plan names and prices', 'Compare against your tiers', 'Draft a summary for the intel feed', 'Ask before posting to Telegram'], cur: 2 },
         log: [{ t: now - 15 * 60000, x: 'Finished competitor pricing scan' }, { t: now - 4.5 * H, x: 'Added 2 items to the intel feed' }] },
-      { id: 'quill', name: 'Quill', role: 'Content', status: 'Online', model: 'Claude Sonnet', last: now - H,
+      { id: 'quill', name: 'Quill', role: 'Writing & content', specialist: true, status: 'Online', model: 'Claude Sonnet', last: now - H,
         desc: 'Drafts video scripts, hooks, newsletters and social posts in your voice.', caps: ['Scripts', 'Hooks', 'Newsletter', 'Repurposing'],
         session: { url: 'studio.video.example.com/upload', title: 'Upload details', target: 'typing description', block: 0, steps: ['Open the upload page', 'Fill in title and description', 'Add chapters', 'Ask before publishing'], cur: 1 },
         log: [{ t: now - 1.1 * H, x: 'Drafted 3 hooks for the next video' }] },
-      { id: 'ledger', name: 'Ledger', role: 'Finance', status: 'Offline', model: 'Haiku', last: now - 40 * 60000,
+      { id: 'ledger', name: 'Ledger', role: 'Finances', specialist: true, status: 'Offline', model: 'Haiku', last: now - 40 * 60000,
         desc: 'Tracks invoices, MRR and spend, and flags anything overdue.', caps: ['Invoices', 'MRR', 'Spend alerts'], session: null,
         log: [{ t: now - 40 * 60000, x: 'Flagged unpaid invoice from Oakline' }] }
     ],
@@ -323,10 +323,13 @@ function emptyState() {
     agents: s.agents.map(a => ({ ...a, log: [], status: 'Offline', session: null })) };
 }
 
+// Older saved data: mark Scout, Quill and Ledger as specialists once.
+const upgrade = s => { if (s && !s.specialistsV) { (s.agents || []).forEach(a => { if (['scout', 'quill', 'ledger'].includes(a.id) && a.specialist === undefined) a.specialist = true; }); s.specialistsV = 1; } return s; };
 /* ---------- state ---------- */
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || S.v !== 1) S = seed();
+upgrade(S);
 /* storage: browser always; plus ./data on this computer when served by server.js */
 let SERVER = false, pushTimer = null, pendingRender = false;
 const save = () => {
@@ -352,9 +355,10 @@ function applyEvent(e) {
     case 'activity': log(who, e.what || ''); break;
     case 'agent': {
       let a = findAgent(e.agent);
-      if (!a) { if (!e.agent) break; a = { id: String(e.agent).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: String(e.agent), role: e.role || 'Agent', status: 'Online', model: e.model || '', last: Date.now(), desc: e.desc || '', caps: e.caps || [], session: null, log: [] }; S.agents.push(a); log(a.name, 'joined as a coworker'); }
+      if (!a) { if (!e.agent) break; a = { id: String(e.agent).toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: String(e.agent), role: e.role || 'Agent', status: 'Online', model: e.model || '', last: Date.now(), desc: e.desc || '', caps: e.caps || [], specialist: e.specialist === true, session: null, log: [] }; S.agents.push(a); log(a.name, 'joined as a coworker'); }
       ['status', 'role', 'model', 'desc'].forEach(k => { if (e[k]) a[k] = e[k]; });
       if (Array.isArray(e.caps)) a.caps = e.caps;
+      if (typeof e.specialist === 'boolean') a.specialist = e.specialist;
       if (e.session) a.session = { url: '', title: '', target: '', block: 0, steps: [], cur: 0, ...(a.session || {}), ...e.session };
       if (e.log) { a.log.unshift({ t: Date.now(), x: String(e.log) }); log(a.name, String(e.log)); }
       a.last = Date.now(); break;
@@ -540,13 +544,14 @@ VIEWS.agents = () => {
     <div class="grow grid" style="--min:230px">
       ${S.agents.map(a => `<button type="button" class="card" data-act="pickAgent" data-id="${a.id}" aria-pressed="${a.id === sel.id}" style="text-align:left;display:flex;flex-direction:column;gap:12px;${a.id === sel.id ? 'border-color:var(--accent);background:var(--accent-wash)' : ''}">
         <span class="between" style="width:100%"><span class="avatar" style="width:44px;height:44px;font-size:17px">${esc(a.name[0])}</span><span class="flex small" style="--gap:6px;color:var(--muted)"><span class="dot" style="background:${statusDot(a.status)}"></span>${a.status}</span></span>
-        <span><span style="display:block;font-size:17px;font-weight:700">${esc(a.name)}</span><span class="small muted">${esc(a.role)}</span></span>
+        <span><span style="display:block;font-size:17px;font-weight:700">${esc(a.name)}</span><span class="small muted">${esc(a.role)}</span>${a.specialist ? ' <span class="tag accent" style="margin-left:6px">SPECIALIST</span>' : ''}</span>
         <span class="between mono small muted" style="width:100%;font-size:11px"><span>${esc(a.model)}</span><span>${ago(a.last)}</span></span></button>`).join('')}
     </div>
     <aside class="card side stack" style="--gap:16px" aria-label="Agent details">
       <div class="flex" style="--gap:14px"><span class="avatar" style="width:52px;height:52px;font-size:20px;background:var(--accent-soft);color:var(--accent)">${esc(sel.name[0])}</span><div><h2 style="font-size:20px">${esc(sel.name)}</h2><div class="small muted">${esc(sel.role)} · ${esc(sel.model)}</div></div>
         <select class="input" style="margin-left:auto;width:auto;height:36px" data-change="agentStatus" data-id="${sel.id}" aria-label="Status">${['Online', 'Busy', 'Offline'].map(s => `<option ${s === sel.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
       <p style="color:var(--text2)">${esc(sel.desc)}</p>
+      <label class="between" style="min-height:36px;cursor:pointer"><span class="small strong" style="color:var(--muted)">Specialist coworker</span><input type="checkbox" data-change="agentSpecialist" data-id="${sel.id}" ${sel.specialist ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--accent)"></label>
       <div><p class="label" style="margin-bottom:8px">Capabilities</p><div class="flex" style="flex-wrap:wrap;--gap:6px">${sel.caps.map(c => `<span class="pill" style="border:1px solid var(--line2);font-weight:500">${esc(c)}</span>`).join('')}</div></div>
       <form data-submit="sendTask" data-id="${sel.id}" class="form-row"><label class="sr" for="taskInput">Task for ${esc(sel.name)}</label><input id="taskInput" name="text" class="input" placeholder="Send ${esc(sel.name)} a task…"><button class="btn primary">Send task</button></form>
       <div><p class="label" style="margin-bottom:4px">Activity log</p><ol class="clean feed" style="max-height:220px;overflow:auto">${sel.log.slice(0, 12).map(l => `<li><span class="time">${clock(l.t)}</span><span style="color:var(--text2)">${esc(l.x)}</span></li>`).join('') || '<li class="muted">No activity yet.</li>'}</ol></div>
@@ -830,6 +835,7 @@ VIEWS.stack = () => {
     ${STACK.map(p => { const off = !!S.stackOff[p.id]; return `<article class="card stack" style="--gap:14px;${off ? 'opacity:.5' : ''}">
       <div class="flex" style="--gap:14px"><span class="avatar mono" style="width:46px;height:46px;background:var(--accent-soft);color:var(--accent);font-weight:500">${p.mark}</span><div><h2 style="font-size:18px">${p.name}</h2><div class="small muted">${p.tagline}</div></div></div>
       <ul class="clean stack" style="--gap:8px;flex:1">${p.features.map(f => `<li class="flex" style="align-items:flex-start;color:var(--text2)"><span style="color:var(--accent);font-weight:700">✓</span><span>${f}</span></li>`).join('')}</ul>
+      ${p.id === 'opendots' ? (() => { const sp = S.agents.filter(a => a.specialist); return `<div class="stack" style="--gap:8px"><p class="label">Your specialists · ${sp.length}</p>${sp.map(a => `<button type="button" class="sub flex" data-act="openAgent" data-id="${a.id}" style="text-align:left;--gap:10px;cursor:pointer"><span class="avatar" style="width:30px;height:30px;font-size:13px">${esc(a.name[0])}</span><span style="flex:1;min-width:0"><span class="strong">${esc(a.name)}</span> <span class="small muted">· ${esc(a.role)}</span></span><span class="flex small" style="--gap:6px;color:var(--muted)"><span class="dot" style="background:${statusDot(a.status)}"></span>${a.status}</span></button>`).join('') || '<div class="small muted">None yet. Mark a coworker as a specialist in Command Center.</div>'}</div>`; })() : ''}
       <label class="between" style="min-height:44px;padding-top:12px;border-top:1px solid var(--line);cursor:pointer"><span class="small strong" style="color:var(--muted)">Use in Mission Control</span><input type="checkbox" data-change="stackToggle" data-id="${p.id}" ${off ? '' : 'checked'} style="width:20px;height:20px;accent-color:var(--accent)"></label>
     </article>`; }).join('')}
   </section>
@@ -869,6 +875,7 @@ const A = {
   moveProject(el) { const p = byId(S.projects, el.dataset.id); p.col = Math.max(0, Math.min(2, p.col + Number(el.dataset.d))); log('You', `moved “${p.title}” to ${['Backlog', 'In Progress', 'Done'][p.col]}`); save(); render(); },
   setPhase(el) { S.phases.forEach(p => p.current = p.id === el.dataset.id); save(); render(); },
   pickAgent(el) { ui.agent = el.dataset.id; render(); },
+  openAgent(el) { ui.agent = el.dataset.id; if (location.hash === '#agents') render(); else location.hash = '#agents'; },
   togglePause(el) { const a = byId(S.agents, el.dataset.id); ui.paused[a.id] = !ui.paused[a.id]; a.log.unshift({ t: Date.now(), x: ui.paused[a.id] ? 'Paused by you' : 'Resumed' }); save(); render(); },
   toggleControl(el) { const a = byId(S.agents, el.dataset.id); const taking = ui.control !== a.id; ui.control = taking ? a.id : null; a.log.unshift({ t: Date.now(), x: taking ? 'You took control of the browser' : 'You handed the browser back' }); save(); render(); },
   stepNext(el) { const a = byId(S.agents, el.dataset.id); if (a.session.cur < a.session.steps.length - 1) { a.session.cur++; a.log.unshift({ t: Date.now(), x: 'Started: ' + a.session.steps[a.session.cur] }); } save(); render(); },
@@ -906,6 +913,7 @@ const C = {
   clientStatus(el) { const c = byId(S.clients, el.dataset.id); c.status = el.value; log('Ledger', `marked ${c.name} as ${c.status}`); save(); render(); },
   setSubs(el) { S.youtube.subs = Math.max(0, parseInt(el.value, 10) || 0); save(); render(); },
   ideaDate(el) { byId(S.youtube.ideas, el.dataset.id).date = el.value; save(); render(); },
+  agentSpecialist(el) { const a = byId(S.agents, el.dataset.id); a.specialist = el.checked; log('You', `${el.checked ? 'made' : 'removed'} ${a.name} ${el.checked ? 'a' : 'as a'} specialist`); save(); render(); },
   stackToggle(el) { S.stackOff[el.dataset.id] = !el.checked; save(); render(); }
 };
 const F = {
@@ -941,7 +949,7 @@ const fields = f => { const w = { dataset: f.dataset }; [...f.elements].forEach(
 document.addEventListener('submit', e => { const f = e.target.closest('[data-submit]'); if (!f) return; e.preventDefault(); F[f.dataset.submit](fields(f), e); });
 window.addEventListener('hashchange', () => { closeResults(); render(); window.scrollTo(0, 0); });
 $('#importFile').addEventListener('change', e => { const file = e.target.files[0]; if (!file) return; const r = new FileReader();
-  r.onload = () => { try { const d = JSON.parse(r.result); if (d.v !== 1 || !d.settings) throw 0; S = d; save(); applyAccent(); $('#settings').close(); render(); toast('Backup imported'); } catch (err) { toast('That file isn’t a Mission Control backup.'); } };
+  r.onload = () => { try { const d = JSON.parse(r.result); if (d.v !== 1 || !d.settings) throw 0; S = upgrade(d); save(); applyAccent(); $('#settings').close(); render(); toast('Backup imported'); } catch (err) { toast('That file isn’t a Mission Control backup.'); } };
   r.readAsText(file); e.target.value = ''; });
 function renderSwatches() { $('#swatches').innerHTML = ['#2DD4BF', '#60A5FA', '#F5B454', '#A78BFA', '#F472B6', '#4ADE80'].map(c => `<button type="button" data-act="pickSwatch" data-v="${c}" aria-label="Accent ${c}" aria-pressed="${c === ui.tmpAccent}" style="width:36px;height:36px;border-radius:10px;background:${c};border:2px solid ${c === ui.tmpAccent ? '#fff' : 'transparent'}"></button>`).join('') + `<label class="sr" for="customAccent">Custom accent</label><input id="customAccent" type="color" value="${ui.tmpAccent}" style="width:44px;height:36px;border:0;background:transparent">`; $('#customAccent').addEventListener('input', ev => { ui.tmpAccent = ev.target.value; document.documentElement.style.setProperty('--accent', ui.tmpAccent); }); }
 $('#settings').addEventListener('close', () => applyAccent());
@@ -1001,7 +1009,7 @@ async function boot() {
     SERVER = true;
     const r = await fetch('/api/state', { cache: 'no-store' });
     const d = r.ok ? await r.json() : null;
-    if (d && d.v === 1) { S = d; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyAccent(); render(); }
+    if (d && d.v === 1) { S = upgrade(d); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyAccent(); render(); }
     else await pushState(); // first run: this computer gets the data you see now
     setStatus('Saved to this computer');
     await pollEvents();
