@@ -460,12 +460,21 @@ VIEWS.dashboard = () => {
         <button class="btn primary">Add</button>
       </form>
     </div>
-    <div class="card side">
-      <div class="between" style="margin-bottom:8px"><h2>Activity</h2><span class="small muted">Live</span></div>
+    ${(() => {
+      const pending = S.approvals.filter(a => a.state === 'pending');
+      const tone = { ALLOW: 'accent', ASK: 'warn', REFUSE: '' };
+      const feed = [...S.activity.map(a => ({ t: a.t, who: a.who, what: a.what })), ...S.actionLog.map(l => ({ t: l.t, who: l.who, what: l.what, outcome: l.outcome }))].sort((a, b) => b.t - a.t).slice(0, 16);
+      return `<div class="card side stack" style="--gap:12px" aria-label="Activity, approvals and actions">
+      <div class="between"><h2>Activity &amp; approvals</h2>${pending.length ? `<span class="tag warn">${pending.length} WAITING ON YOU</span>` : '<span class="small muted">Live</span>'}</div>
+      ${pending.map(a => `<div class="sub stack" style="--gap:8px;border-color:rgba(245,180,84,.4);background:rgba(245,180,84,.06)">
+        <p style="color:var(--text2)"><b style="color:#fff">${esc(a.who)}</b> wants to ${esc(a.what)}.</p>
+        <div class="mono small" style="color:var(--muted)">rule: ${esc(a.rule)}</div>
+        <div class="flex"><button class="btn primary sm" style="flex:1" data-act="approve" data-id="${a.id}">Approve</button><button class="btn sm" style="flex:1" data-act="deny" data-id="${a.id}">Deny</button></div>
+      </div>`).join('')}
       <ol class="clean feed" style="max-height:380px;overflow:auto">
-        ${S.activity.slice(0, 14).map(a => `<li><span class="time">${clock(a.t)}</span><span style="color:var(--text2)"><b style="color:var(--accent);font-weight:600">${esc(a.who)}</b> ${esc(a.what)}</span></li>`).join('') || '<li class="muted">Nothing yet.</li>'}
+        ${feed.map(f => `<li><span class="time">${clock(f.t)}</span>${f.outcome ? `<span class="tag ${tone[f.outcome] || ''}" style="flex:0 0 auto;align-self:flex-start">${f.outcome}</span>` : ''}<span style="flex:1;min-width:0;color:var(--text2)"><b style="color:var(--accent);font-weight:600">${esc(f.who)}</b> ${esc(f.what)}</span></li>`).join('') || '<li class="muted">Nothing yet.</li>'}
       </ol>
-    </div>
+    </div>`; })()}
   </section>
   <section class="grid" style="--min:300px">
     <div class="card"><div class="between" style="margin-bottom:12px"><h2>Agents</h2><a class="link" href="#agents">Command Center →</a></div>
@@ -911,7 +920,7 @@ const A = {
   approve(el) { decide(el.dataset.id, true); },
   deny(el) { decide(el.dataset.id, false); }
 };
-function decide(id, ok) { const a = byId(S.approvals, id); a.state = ok ? 'approved' : 'denied'; S.actionLog.unshift({ t: Date.now(), outcome: 'ASK', who: a.who, what: a.what + (ok ? ' — approved' : ' — denied by you') }); log(a.who, (ok ? 'got approval to ' : 'was denied: ') + a.what); save(); render(); }
+function decide(id, ok) { const a = byId(S.approvals, id); a.state = ok ? 'approved' : 'denied'; S.actionLog.unshift({ t: Date.now(), outcome: 'ASK', who: a.who, what: a.what + (ok ? ' — approved' : ' — denied by you') }); save(); render(); }
 
 const C = {
   togglePriority(el) { const p = byId(S.priorities, el.dataset.id); p.done = el.checked; if (p.done) log('You', `completed “${p.text}”`); save(); render(); },
