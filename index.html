@@ -369,6 +369,8 @@ function applyEvent(e) {
     case 'priority': if (e.text) S.priorities.push({ id: uid(), text: e.text, tag: String(e.tag || 'GENERAL').toUpperCase(), done: false }); break;
     case 'meeting': { const st = new Date(e.start).getTime(); if (e.title && !isNaN(st)) S.meetings.push({ id: uid(), title: e.title, start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Zoom', attendees: e.attendees || '—', agenda: (e.agenda || []).map(t => ({ id: uid(), text: t, done: false })), notes: e.notes || '', actions: [] }); break; }
     case 'note': if (e.body) S.notes.unshift({ id: uid(), saved: Date.now(), body: String(e.body) }); break;
+    case 'project': if (e.title) { const col = [0, 1, 2].includes(Number(e.col)) ? Number(e.col) : 0; S.projects.push({ id: uid(), title: String(e.title), desc: String(e.desc || ''), priority: ['HIGH', 'MEDIUM', 'LOW'].includes(e.priority) ? e.priority : 'MEDIUM', col, created: Date.now() }); log(who, `added project “${e.title}”`); } break;
+    case 'decision': if (e.q && e.d) S.decisions.unshift({ id: uid(), date: Date.now(), q: String(e.q), d: String(e.d), who: e.who || '—' }); break;
   }
 }
 const safeToRender = () => { const a = document.activeElement; return !a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && !a.value && a.type !== 'file'); };

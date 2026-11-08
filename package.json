@@ -1,11 +1,12 @@
 {
   "name": "bot-agents-hq",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Mission Control — a local command center for your AI agent team",
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "mcp": "node mcp-stdio.js"
   },
   "engines": {
     "node": ">=18"

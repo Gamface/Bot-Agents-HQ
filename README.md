@@ -63,10 +63,50 @@ curl -X POST http://localhost:4000/api/events -H 'Content-Type: application/json
 | `priority` | `text`, `tag` | Dashboard priorities |
 | `meeting` | `title`, `start` (ISO date), `dur`, `mtype`, `attendees`, `agenda` [ ] | Meetings |
 | `note` | `body` | Notes |
+| `project` | `title`, `desc`, `priority` (HIGH/MEDIUM/LOW), `col` (0 Backlog, 1 In Progress, 2 Done) | Projects board |
+| `decision` | `q` (question), `d` (decision), `who` | Executive decisions log |
 
 You can send one event or an array of them. To find out whether you approved something, an agent reads `GET /api/state` and looks for the matching `approvals[].ref`, whose `state` is `pending`, `approved` or `denied`.
 
 The live browser view shows whatever an agent reports in `session`. Streaming a real browser picture needs OpenMuse.
+
+### Connect Claude and other AI tools (MCP)
+
+Mission Control is also an **MCP server**, so Claude Code, Claude Desktop, Cursor and other MCP clients can use it directly, without curl. Your agents can then report their status, save results, plan work, and ask you before doing anything sensitive. Keep `server.js` running.
+
+**Claude Code** (or any client that supports Streamable HTTP):
+
+```sh
+claude mcp add --transport http mission-control http://localhost:4000/mcp
+```
+
+**Claude Desktop, Cursor, and other clients that start a local command** use the included bridge. Add this to the client's MCP config (for Claude Desktop: Settings → Developer → Edit Config), with the full path to your copy:
+
+```json
+{
+  "mcpServers": {
+    "mission-control": {
+      "command": "node",
+      "args": ["C:/path/to/Bot-Agents-HQ/mcp-stdio.js"]
+    }
+  }
+}
+```
+
+Set `"env": { "MC_URL": "http://localhost:5000" }` if you changed the port.
+
+| Tool | What it does |
+|---|---|
+| `get_overview` | Goal, revenue progress, priorities, projects by column, agents, pending approvals, upcoming meetings |
+| `get_section` | Full contents of one part: priorities, projects, agents, approvals, meetings, intel, notes, decisions, activity, clients, timeline, tasks, queue |
+| `get_my_tasks` | Tasks you sent an agent from **Command Center → Send task**, plus its follow-up queue |
+| `update_agent` | Create or update a coworker: status, log line, role, live browser view |
+| `log_activity` · `log_action` · `log_decision` | Activity feed · Stack action log · decisions log |
+| `add_priority` · `add_project` · `add_note` · `add_intel` · `add_meeting` | Add to those screens |
+| `request_approval` | Puts an approval card on the dashboard and **waits for you** to click Approve or Deny (up to 110 seconds), then tells the agent the answer |
+| `check_approval` | Look up or keep waiting on an approval by its `ref` |
+
+Changes made through MCP go through the same queue as `/api/events`, so they appear in the open dashboard within about 5 seconds. If the dashboard isn't open, they're applied the next time you open it, and tool results say so. Try asking Claude: *"Check Mission Control, then add yourself as a coworker and log what you're working on."*
 
 ### A local LLM agent (Ollama, Podman AI Lab)
 

@@ -10,6 +10,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { createMcp } = require('./mcp');
 
 const ROOT = __dirname;
 const DATA = process.env.DATA_DIR || path.join(ROOT, 'data');
@@ -56,7 +57,29 @@ const readBody = req => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const EVENT_TYPES = new Set(['activity', 'agent', 'intel', 'approval', 'action', 'priority', 'meeting', 'note']);
+const EVENT_TYPES = new Set(['activity', 'agent', 'intel', 'approval', 'action', 'priority', 'meeting', 'note', 'project', 'decision']);
+
+// Queue agent events for the dashboard to apply. Checks the whole batch first, so a rejected batch saves nothing.
+function addEvents(list) {
+  if (list.some(e => !e || !EVENT_TYPES.has(e.type))) throw Object.assign(new Error('Unknown event type. Use one of: ' + [...EVENT_TYPES].join(', ')), { code: 400 });
+  const added = [];
+  for (const e of list) {
+    const ev = { ...e, id: nextEventId++, at: new Date().toISOString() };
+    events.push(ev); added.push(ev.id);
+  }
+  if (events.length > KEEP_EVENTS) events = events.slice(-KEEP_EVENTS);
+  writeJSON(EVENTS, events);
+  return added;
+}
+
+// When the dashboard page last checked for events (browsers send Sec-Fetch-* headers; scripts don't).
+let dashboardSeenAt = 0;
+
+const mcp = createMcp({
+  readState: () => (fs.existsSync(STATE) ? readJSON(STATE, null) : null),
+  addEvents,
+  dashboardSeenAt: () => dashboardSeenAt,
+});
 
 // Requests that change data must come from this dashboard or a script — not from another website open in your browser.
 function sameOriginOrScript(req) {
@@ -91,22 +114,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/events' && req.method === 'GET') {
+      if (req.headers['sec-fetch-site']) dashboardSeenAt = Date.now();
       const after = Number(url.searchParams.get('after')) || 0;
       return send(res, 200, { events: events.filter(e => e.id > after), lastEventId: nextEventId - 1 });
     }
     if (p === '/api/events' && req.method === 'POST') {
       const body = await readBody(req);
-      const list = Array.isArray(body) ? body : [body];
-      // Check the whole batch first, so a rejected request saves nothing.
-      if (list.some(e => !e || !EVENT_TYPES.has(e.type))) return send(res, 400, { error: 'Unknown event type. Use one of: ' + [...EVENT_TYPES].join(', ') });
-      const added = [];
-      for (const e of list) {
-        const ev = { ...e, id: nextEventId++, at: new Date().toISOString() };
-        events.push(ev); added.push(ev.id);
-      }
-      if (events.length > KEEP_EVENTS) events = events.slice(-KEEP_EVENTS);
-      writeJSON(EVENTS, events);
-      return send(res, 201, { ok: true, ids: added });
+      return send(res, 201, { ok: true, ids: addEvents(Array.isArray(body) ? body : [body]) });
+    }
+
+    // MCP (Model Context Protocol) over Streamable HTTP: one JSON-RPC message or batch per POST, JSON reply.
+    if (p === '/mcp') {
+      if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }); return res.end(); }
+      if (!sameOriginOrScript(req)) return send(res, 403, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Cross-site request blocked' } });
+      let body;
+      try { body = await readBody(req); } catch (err) { return send(res, err.code === 413 ? 413 : 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: err.message } }); }
+      const reply = await mcp.handle(body);
+      if (!reply) { res.writeHead(202); return res.end(); }
+      return send(res, 200, reply);
     }
 
     send(res, 404, { error: 'Not found' });
