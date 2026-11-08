@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mission Control</title>
+<meta name="theme-color" content="#0B0D12">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -118,7 +123,13 @@ td{padding:12px 12px 12px 0;border-top:1px solid rgba(255,255,255,.06);vertical-
 .feed .time{flex:0 0 56px;font-family:var(--mono);font-size:12px;color:var(--dim)}
 .col{padding:14px;border-radius:16px;border:1px solid var(--line);background:var(--card2);display:flex;flex-direction:column;gap:10px;min-height:320px}
 .kcard{padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:8px}
-dialog{border:1px solid var(--line2);border-radius:16px;background:var(--bg2);color:var(--text);padding:0;width:min(560px,calc(100vw - 32px))}
+dialog{border:1px solid var(--line2);border-radius:16px;background:var(--bg2);color:var(--text);padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
+details.conn{border:1px solid var(--line2);border-radius:12px;padding:0 14px}
+details.conn>summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;font-weight:600}
+details.conn>summary::-webkit-details-marker{display:none}
+details.conn[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px}
+details.conn .src{padding:10px 0;border-bottom:1px solid var(--line)}
+details.conn .src:last-child{border-bottom:0}
 dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line2);padding:10px 16px;border-radius:10px;z-index:50;font-size:13px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
 @media (max-width:640px){main{padding:16px}header.top{padding:12px 16px}h1{font-size:24px}.card{padding:16px}}
@@ -163,6 +174,7 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
       <label class="field" id="runUrlField">Server address (OpenAI-compatible)<input class="input" name="runUrl" placeholder="http://localhost:11434/v1" autocomplete="off"></label>
       <p class="small muted" id="runnerNote"></p>
     </fieldset>
+    <div id="connections" class="stack" style="--gap:10px"></div>
     <div class="flex" style="flex-wrap:wrap;margin-top:4px">
       <button class="btn primary" value="save" data-act="saveSettings">Save</button>
       <button class="btn" type="button" data-act="exportData">Export backup</button>
@@ -173,6 +185,16 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
       <button class="btn sm" type="button" data-act="clearAll">Start empty</button>
       <span class="small muted" id="storageNote">Data is saved in this browser only.</span>
     </div>
+  </form>
+</dialog>
+
+<dialog id="signin" aria-labelledby="signinTitle">
+  <form id="signinForm" style="padding:24px;display:flex;flex-direction:column;gap:14px">
+    <h2 id="signinTitle">Sign in to Mission Control</h2>
+    <p class="muted">This device needs the access token. Find it on the computer running Mission Control, under <b>Settings → Other devices</b>, or use the sign-in link it printed when it started.</p>
+    <label class="field">Access token<input class="input" name="token" autocomplete="current-password" type="password" required></label>
+    <p class="small" id="signinError" style="color:var(--bad);min-height:1em"></p>
+    <button class="btn primary">Sign in</button>
   </form>
 </dialog>
 
@@ -341,6 +363,7 @@ if (!S || S.v !== 1) S = seed();
 upgrade(S);
 /* storage: browser always; plus ./data on this computer when served by server.js */
 let SERVER = false, pushTimer = null, pendingRender = false;
+const CLIENT_ID = Math.random().toString(36).slice(2); // tells this page's own saves apart from other devices'
 const save = () => {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!SERVER) toast('Could not save — browser storage is full or blocked.'); }
   if (SERVER) { clearTimeout(pushTimer); pushTimer = setTimeout(pushState, 400); }
@@ -352,7 +375,9 @@ function setStatus(text, warn) {
 }
 async function pushState() {
   try {
-    const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S) });
+    pushTimer = null;
+    const r = await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID }, body: JSON.stringify(S) });
+    if (r.status === 401) return needSignIn();
     if (!r.ok) throw new Error(r.status);
     setStatus('Saved to this computer');
   } catch (e) { setStatus('Server unreachable — saving in browser', true); }
@@ -393,10 +418,17 @@ function applyEvent(e) {
     }
     case 'intel': S.intel.unshift({ id: uid(), title: e.title || 'Untitled', summary: e.summary || '', source: e.source || who, cat: e.cat || 'AI News', imp: ['hot', 'notable', 'ref'].includes(e.imp) ? e.imp : 'notable', date: Date.now() }); break;
     case 'approval': if (e.ref && e.state) { const ex = S.approvals.find(a => a.ref === e.ref); if (ex && ex.state === 'pending') ex.state = String(e.state); break; }
-      S.approvals.push({ id: uid(), ref: e.ref || null, who, what: e.what || '', rule: e.rule || 'ask first', state: 'pending' }); toast(who + ' is asking for approval'); break;
+      S.approvals.push({ id: uid(), ref: e.ref || null, who, what: e.what || '', rule: e.rule || 'ask first', state: 'pending' }); toast(who + ' is asking for approval'); notifyHere(who + ' needs your OK', e.what || ''); break;
     case 'action': S.actionLog.unshift({ t: Date.now(), outcome: ['ALLOW', 'ASK', 'REFUSE'].includes(e.outcome) ? e.outcome : 'ALLOW', who, what: e.what || '' }); break;
     case 'priority': if (e.text) S.priorities.push({ id: uid(), text: e.text, tag: String(e.tag || 'GENERAL').toUpperCase(), done: false }); break;
-    case 'meeting': { const st = new Date(e.start).getTime(); if (e.title && !isNaN(st)) S.meetings.push({ id: uid(), title: e.title, start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Zoom', attendees: e.attendees || '—', agenda: (e.agenda || []).map(t => ({ id: uid(), text: t, done: false })), notes: e.notes || '', actions: [] }); break; }
+    case 'meeting': if (e.ext) { // from a synced calendar: update in place, keeping your prep notes
+      const m = S.meetings.find(x => x.ext === e.ext);
+      if (e.cancelled) { if (m && !ended(m)) S.meetings = S.meetings.filter(x => x !== m); break; }
+      const st = Number(e.start);
+      if (m) Object.assign(m, { title: String(e.title || m.title), start: st || m.start, dur: Number(e.dur) || m.dur, type: e.mtype || m.type, attendees: e.attendees || m.attendees });
+      else if (e.title && st) S.meetings.push({ id: uid(), ext: String(e.ext), title: String(e.title), start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Call', attendees: e.attendees || '—', agenda: [], notes: e.notes || '', actions: [] });
+      break;
+    } else { const st = new Date(e.start).getTime(); if (e.title && !isNaN(st)) S.meetings.push({ id: uid(), title: e.title, start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Zoom', attendees: e.attendees || '—', agenda: (e.agenda || []).map(t => ({ id: uid(), text: t, done: false })), notes: e.notes || '', actions: [] }); break; }
     case 'note': if (e.body) S.notes.unshift({ id: uid(), saved: Date.now(), body: String(e.body) }); break;
     case 'project': if (e.title) { const col = [0, 1, 2].includes(Number(e.col)) ? Number(e.col) : 0; S.projects.push({ id: uid(), title: String(e.title), desc: String(e.desc || ''), priority: ['HIGH', 'MEDIUM', 'LOW'].includes(e.priority) ? e.priority : 'MEDIUM', col, created: Date.now() }); log(who, `added project “${e.title}”`); } break;
     case 'task': if (e.ref) {
@@ -407,14 +439,29 @@ function applyEvent(e) {
       const old = S.tasks.filter(x => x.ref && !ACTIVE_TASK.includes(x.state));
       if (old.length > 15) { const drop = new Set(old.slice(15)); S.tasks = S.tasks.filter(x => !drop.has(x)); }
     } break;
+    case 'client': if (e.ext && e.name) {
+      const c = S.clients.find(x => x.ext === e.ext), status = ['Active', 'Pending', 'Churned'].includes(e.status) ? e.status : 'Active';
+      if (c) Object.assign(c, { name: String(e.name), v: Number(e.v) || 0, status, since: e.since || c.since });
+      else if (status !== 'Churned') S.clients.push({ id: uid(), ext: String(e.ext), name: String(e.name), v: Number(e.v) || 0, status, since: e.since || '—' });
+    } break;
+    case 'youtube': if (Number.isFinite(Number(e.subs))) { S.youtube.subs = Number(e.subs); S.youtube.syncedAt = Date.now(); } break;
+    case 'brief': if (Array.isArray(e.items) && e.items.length) S.brief = { date: String(e.date), at: Date.now(), items: e.items.slice(0, 3).map(i => ({ title: String(i.title || ''), summary: String(i.summary || ''), imp: ['hot', 'notable', 'ref'].includes(i.imp) ? i.imp : 'notable', source: String(i.source || 'Morning brief'), cat: '', date: Date.now() })) }; break;
     case 'decision': if (e.q && e.d) S.decisions.unshift({ id: uid(), date: Date.now(), q: String(e.q), d: String(e.d), who: e.who || '—' }); break;
   }
 }
 const safeToRender = () => { const a = document.activeElement; return !a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && !a.value && a.type !== 'file'); };
 setInterval(() => { if (pendingRender && safeToRender()) { pendingRender = false; render(); } }, 1500);
-async function pollEvents() {
+// One check at a time, so the same events are never applied twice; a request during a check runs one more after it.
+let polling = null, pollAgain = false;
+function pollEvents() {
+  if (polling) { pollAgain = true; return polling; }
+  polling = pollOnce().finally(() => { polling = null; if (pollAgain) { pollAgain = false; pollEvents(); } });
+  return polling;
+}
+async function pollOnce() {
   try {
     const r = await fetch('/api/events?after=' + (S.lastEventId || 0));
+    if (r.status === 401) { await needSignIn(); return; }
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     if (d.events.length) {
@@ -422,7 +469,7 @@ async function pollEvents() {
       S.lastEventId = d.lastEventId; save();
       if (safeToRender()) render(); else pendingRender = true;
     } else if (d.lastEventId < (S.lastEventId || 0)) { S.lastEventId = d.lastEventId; save(); }
-    setStatus('Saved to this computer');
+    setStatus(stream && stream.readyState === 1 ? 'Live · saved to this computer' : 'Saved to this computer');
   } catch (e) { setStatus('Server unreachable — saving in browser', true); }
 }
 const ui = { cat: 'All', imp: 'all', clientFilter: 'All', agent: 'scout', control: null, paused: {}, meetingOpen: null, stackOpen: null, editingProject: null, addingProject: false,
@@ -521,7 +568,7 @@ VIEWS.dashboard = () => {
     <div class="card"><div class="between" style="margin-bottom:12px"><h2>Today's meetings</h2><a class="link" href="#meetings">Meeting prep →</a></div>
       <div class="stack" style="--gap:8px">${todays.map(m => `<div class="sub" style="padding:12px 14px"><div class="between"><span class="strong">${esc(m.title)}</span><span class="mono small" style="color:var(--accent)">${hm(m.start)}</span></div><div class="small muted">${esc(m.type)} · ${esc(m.attendees)}</div></div>`).join('') || '<div class="empty">No more meetings today.</div>'}</div></div>
     <div class="card"><div class="between" style="margin-bottom:12px"><h2>Daily brief</h2><a class="link" href="#intel">Intel feed →</a></div>
-      <div class="stack">${brief.map(i => { const [l, c] = impTag(i.imp); return `<div class="flex" style="align-items:flex-start;--gap:12px"><span class="tag ${c}">${l}</span><div><div class="strong" style="line-height:1.4">${esc(i.title)}</div><div class="small muted">${esc(i.cat)}</div></div></div>`; }).join('') || '<div class="empty">No intel yet.</div>'}</div></div>
+      <div class="stack">${brief.map(i => { const [l, c] = impTag(i.imp); return `<div class="flex" style="align-items:flex-start;--gap:12px"><span class="tag ${c}">${l}</span><div><div class="strong" style="line-height:1.4">${esc(i.title)}</div><div class="small muted">${esc(i.cat || i.summary)}</div></div></div>`; }).join('') || '<div class="empty">No intel yet.</div>'}</div></div>
   </section>`;
 };
 const metric = (label, glyph, value, sub, pct) => `<div class="card metric"><div class="between"><span class="label">${label}</span><span class="glyph">${glyph}</span></div><div class="v">${value}</div><div class="small" style="color:var(--muted);margin-top:4px">${esc(sub)}</div><div class="bar" style="margin-top:14px"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div></div>`;
@@ -745,7 +792,7 @@ VIEWS.revenue = () => {
     </div>
   </section>
   <section class="card">
-    <div class="between" style="margin-bottom:12px"><h2>Clients</h2><div class="seg" role="group" aria-label="Filter by status">${['All', 'Active', 'Pending', 'Churned'].map(x => `<button type="button" class="${x === f ? 'on' : ''}" aria-pressed="${x === f}" data-act="clientFilter" data-v="${x}">${x}</button>`).join('')}</div></div>
+    <div class="between" style="margin-bottom:12px;flex-wrap:wrap;gap:10px"><div class="flex" style="--gap:10px"><h2>Clients</h2>${S.clients.some(c => c.ext) ? '<span class="tag accent">SYNCED FROM STRIPE</span>' : ''}<label class="btn sm" style="cursor:pointer">Import CSV<input type="file" accept=".csv,text/csv" id="csvFile" class="sr"></label></div><div class="seg" role="group" aria-label="Filter by status">${['All', 'Active', 'Pending', 'Churned'].map(x => `<button type="button" class="${x === f ? 'on' : ''}" aria-pressed="${x === f}" data-act="clientFilter" data-v="${x}">${x}</button>`).join('')}</div></div>
     <div class="scroll-x"><table style="min-width:640px"><thead><tr><th>CLIENT</th><th>MONTHLY</th><th>STATUS</th><th>SINCE</th><th></th></tr></thead><tbody>
       ${rows.map(c => `<tr><td class="strong">${esc(c.name)}</td><td class="mono">${usd(c.v)}</td><td><span class="tag ${stTag(c.status)}" style="height:auto;padding:0">
         <select data-change="clientStatus" data-id="${c.id}" aria-label="Status for ${esc(c.name)}" style="background:transparent;border:0;color:inherit;font:inherit;padding:4px 8px;cursor:pointer">${['Active', 'Pending', 'Churned'].map(s => `<option ${s === c.status ? 'selected' : ''}>${s}</option>`).join('')}</select></span></td>
@@ -810,7 +857,9 @@ VIEWS.youtube = () => {
   </section>`;
 };
 
-function briefItems() { const r = { hot: 0, notable: 1, ref: 2 }; return S.intel.slice().sort((a, b) => r[a.imp] - r[b.imp] || b.date - a.date).slice(0, 3); }
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// The model's morning brief when there is one for today; otherwise the top intel items.
+function briefItems() { if (S.brief && S.brief.date === todayKey()) return S.brief.items; const r = { hot: 0, notable: 1, ref: 2 }; return S.intel.slice().sort((a, b) => r[a.imp] - r[b.imp] || b.date - a.date).slice(0, 3); }
 VIEWS.intel = () => {
   const items = S.intel.filter(i => (ui.cat === 'All' || i.cat === ui.cat) && (ui.imp === 'all' || i.imp === ui.imp)).sort((a, b) => b.date - a.date);
   const brief = briefItems();
@@ -925,7 +974,7 @@ const byId = (arr, id) => arr.find(x => x.id === id);
 const agentByName = n => S.agents.find(a => a.name === n);
 const A = {
   openSettings() { const f = fields($('#settingsForm')); f.userName.value = S.settings.name; f.goalMrr.value = S.settings.goalMrr; f.goalDate.value = S.settings.goalDate; ui.tmpAccent = S.settings.accent; renderSwatches();
-    const run = S.settings.runner || {}; f.runProvider.value = run.provider || 'off'; f.runModel.value = run.model || ''; f.runUrl.value = run.url || ''; ui.runModels = { [run.provider]: run.model || '' }; updateRunnerFields(); loadRunnerInfo().then(updateRunnerFields);
+    const run = S.settings.runner || {}; f.runProvider.value = run.provider || 'off'; f.runModel.value = run.model || ''; f.runUrl.value = run.url || ''; ui.runModels = { [run.provider]: run.model || '' }; updateRunnerFields(); loadRunnerInfo().then(updateRunnerFields); renderConnections(); loadConnections();
     $('#settings').showModal(); },
   saveSettings(el, e) { e.preventDefault(); const f = fields($('#settingsForm')); S.settings.name = f.userName.value.trim(); S.settings.goalMrr = Math.max(1, Number(f.goalMrr.value) || 1); S.settings.goalDate = f.goalDate.value || S.settings.goalDate; S.settings.accent = ui.tmpAccent || S.settings.accent; applyAccent();
     S.settings.runner = { provider: f.runProvider.value, model: f.runModel.value.trim(), url: f.runUrl.value.trim() }; save(); $('#settings').close(); render(); toast('Settings saved'); },
@@ -1035,13 +1084,153 @@ function updateRunnerFields() {
   ui.lastProvider = p;
   f.runModel.disabled = p === 'off'; f.runModel.placeholder = p === 'claude' ? (d.claude ? d.claude.model : 'claude-opus-5-5') : p === 'local' ? (d.local ? d.local.model : 'llama3.2') : '';
   f.runUrl.placeholder = d.local ? d.local.url : 'http://localhost:11434/v1';
-  $('#runUrlField').hidden = p !== 'local';
+  $('#runUrlField').style.display = p === 'local' ? '' : 'none';
   const note = $('#runnerNote');
   note.textContent = !SERVER ? 'The AI runner needs Mission Control running on this computer (start.bat / start.sh).'
     : p === 'off' ? 'Tasks you send are logged for agents that connect on their own (MCP or /api/events).'
     : p === 'claude' ? (!info ? 'Checking…' : !info.claudeSdk ? 'One-time setup: in the Mission Control folder run “npm install”, then restart it.' : (info.claudeKeyInEnv ? 'Uses ANTHROPIC_API_KEY from the environment.' : 'Set ANTHROPIC_API_KEY (or run “ant auth login”) before starting Mission Control.') + ' Billed to your Anthropic account.')
     : 'Runs on your computer. Pick a model that supports tool calling (e.g. llama3.2, qwen2.5) so it can use your rules-checked tools.';
 }
+
+/* ---------- Settings: data sources, phone alerts, other devices ---------- */
+async function loadConnections() {
+  if (!SERVER) { ui.conn = null; return renderConnections(); }
+  const get = async p => { try { const r = await fetch(p, { cache: 'no-store' }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
+  const [auth, sources, push] = await Promise.all([get('/api/auth'), get('/api/sources'), get('/api/push')]);
+  ui.conn = { auth, sources, push };
+  renderConnections();
+}
+function srcStatus(name) {
+  const st = ui.conn && ui.conn.sources && ui.conn.sources.status[name];
+  if (ui.syncing && ui.syncing[name]) return '<span class="small muted">Syncing…</span>';
+  if (!st) return '';
+  return `<span class="small" style="color:${st.ok ? 'var(--accent)' : 'var(--bad)'}">${st.ok ? '✓' : '✗'} ${esc(st.msg)} · ${ago(st.at)}</span>`;
+}
+function renderConnections() {
+  const box = $('#connections'); if (!box) return;
+  const c = ui.conn;
+  if (!SERVER || !c || !c.sources) { box.innerHTML = '<p class="small muted">Data sources, phone alerts and access from other devices work when Mission Control runs on your computer (start.bat / start.sh).</p>'; return; }
+  const s = c.sources, a = c.auth || {}, p = c.push || { devices: [] };
+  const set = on => `<span class="tag ${on ? 'accent' : ''}">${on ? 'ON' : 'OFF'}</span>`;
+  const row = (name, title, help, fields, extra = '') => `<div class="src stack" style="--gap:8px">
+    <div class="between"><span class="strong">${title}</span>${set(s[name].set || (name === 'brief' && s.brief.enabled))}</div>
+    <p class="small muted">${help}</p>${fields}
+    <div class="flex" style="flex-wrap:wrap;--gap:8px"><button type="button" class="btn sm" data-act="saveSource" data-id="${name}">Save</button>${s[name].set || name === 'brief' ? `<button type="button" class="btn sm" data-act="syncSource" data-id="${name}">${name === 'brief' ? 'Write it now' : 'Sync now'}</button>` : ''}${extra}</div>
+    <div>${srcStatus(name)}</div></div>`;
+  const secret = (id, ph, hint) => `<input class="input" id="${id}" type="password" autocomplete="off" placeholder="${esc(hint ? 'Saved: ' + hint + ' (type to replace)' : ph)}">`;
+  const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window;
+  const secure = window.isSecureContext;
+  const addrs = (a.addresses || []).map(ip => `http://${ip}:${a.port}/#token=${a.token}`);
+  box.innerHTML = `
+  <details class="conn" ${ui.openConn === 'sources' ? 'open' : ''} data-conn="sources"><summary>Data sources <span class="small muted">${['calendar', 'stripe', 'youtube', 'rss'].filter(n => s[n].set).length} of 4 connected</span></summary>
+    ${row('calendar', 'Meetings · Google Calendar', 'In Google Calendar: Settings → your calendar → <b>Secret address in iCal format</b>. Paste it here. Any calendar with an iCal link works. Syncs every 15 minutes; your prep notes are kept.', secret('srcCal', 'https://calendar.google.com/calendar/ical/…/basic.ics', s.calendar.hint))}
+    ${row('stripe', 'Revenue · Stripe', 'Create a <b>restricted key</b> in Stripe (Developers → API keys) with Read access to Subscriptions and Customers. Clients and MRR sync every 30 minutes. No Stripe? Use <b>Import CSV</b> on the Revenue screen.', secret('srcStripe', 'rk_live_…', s.stripe.hint))}
+    ${row('youtube', 'Subscribers · YouTube', 'A YouTube Data API key (Google Cloud console → APIs → YouTube Data API v3 → Credentials) and your channel (@handle or channel ID). Syncs hourly.', `${secret('srcYtKey', 'API key', s.youtube.hint)}<input class="input" id="srcYtChannel" placeholder="@yourchannel" value="${esc(s.youtube.channel)}">`)}
+    ${row('rss', 'Intel · RSS feeds', 'One feed address per line. New items are added every 30 minutes and ranked hot / notable / reference by the AI runner’s model (unranked if the runner is off).', `<textarea class="input" id="srcRss" rows="4" placeholder="https://example.com/feed.xml">${esc(s.rss.feeds.join('\n'))}</textarea>`)}
+    ${row('brief', 'Daily brief', `Each morning the AI runner’s model picks your top 3 for the day from meetings, priorities, approvals and intel.${s.brief.last ? ' Last written ' + esc(s.brief.last) + '.' : ''}${runnerOn() ? '' : ' <b>Turn on the AI runner above to use it.</b>'}`,
+      `<div class="flex" style="--gap:10px;flex-wrap:wrap"><label class="flex small" style="--gap:6px"><input type="checkbox" id="srcBriefOn" ${s.brief.enabled ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent)"> Write it every morning at</label><select class="input" id="srcBriefHour" style="width:auto;height:36px">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === s.brief.hour ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}</select></div>`)}
+  </details>
+  <details class="conn" ${ui.openConn === 'alerts' ? 'open' : ''} data-conn="alerts"><summary>Phone alerts <span class="small muted">${p.devices.length} device${p.devices.length === 1 ? '' : 's'}</span></summary>
+    <div class="stack" style="--gap:10px;padding-bottom:12px">
+      <p class="small muted">Get a notification when an agent is waiting for your approval, even when Mission Control is closed. Turn it on on each phone or computer that should get alerts. On iPhone, first add Mission Control to your Home Screen (Share → Add to Home Screen) and open it from there.</p>
+      ${!secure ? `<p class="small" style="color:var(--warn)">This page isn’t on a secure (https) address, so this browser won’t allow alerts or installing the app. It works on this computer at http://localhost, and on your phone through an https tunnel such as Tailscale (<span class="mono">tailscale serve ${a.port || 4000}</span>).</p>` : !pushSupported ? '<p class="small" style="color:var(--warn)">This browser doesn’t support push alerts.</p>' : ''}
+      <div class="flex" style="flex-wrap:wrap;--gap:8px">${secure && pushSupported ? `<button type="button" class="btn sm ${ui.pushOn ? '' : 'primary'}" data-act="${ui.pushOn ? 'pushOff' : 'pushOn'}">${ui.pushOn ? 'Turn off on this device' : 'Turn on for this device'}</button>` : ''}${p.devices.length ? '<button type="button" class="btn sm" data-act="pushTest">Send a test alert</button>' : ''}</div>
+      ${p.devices.length ? `<ul class="clean stack small" style="--gap:4px">${p.devices.map(d => `<li class="between"><span>${esc(d.label)} <span class="muted">· added ${ago(d.added)}</span></span><button type="button" class="x" data-act="pushRemove" data-id="${esc(d.endpoint)}" aria-label="Remove ${esc(d.label)}">×</button></li>`).join('')}</ul>` : ''}
+    </div>
+  </details>
+  <details class="conn" ${ui.openConn === 'devices' ? 'open' : ''} data-conn="devices"><summary>Other devices <span class="small muted">${a.tokenSet ? 'token required' : 'this computer only'}</span></summary>
+    <div class="stack" style="--gap:10px;padding-bottom:12px">
+    ${!a.local ? `<p class="small muted">You’re signed in on this device with the access token.</p><div><button type="button" class="btn sm" data-act="signOut">Sign out on this device</button></div>`
+    : `<p class="small muted">Requests from this computer never need a token. Every other device must sign in with it, including through a tunnel.</p>
+      ${a.reachable ? (addrs.length ? `<p class="small">Open one of these on your phone (same Wi-Fi). Keep them private: they sign you in.</p>${addrs.map((u, i) => `<div class="form-row"><input class="input mono small" readonly value="${esc(u)}" id="devLink${i}"><button type="button" class="btn sm" data-act="copyLink" data-id="devLink${i}">Copy</button></div>`).join('')}` : '<p class="small muted">No network address found.</p>')
+        : `<p class="small muted">Right now Mission Control only listens on this computer. To use it from your phone, start it with <span class="mono">HOST=0.0.0.0</span>, or keep it local and use an https tunnel (recommended for phone alerts): <span class="mono">tailscale serve ${a.port}</span>.</p>`}
+      ${a.token ? `<div class="form-row"><input class="input mono small" readonly value="${esc(a.token)}" id="devToken"><button type="button" class="btn sm" data-act="copyLink" data-id="devToken">Copy token</button></div>` : ''}
+      <div><button type="button" class="btn sm" data-act="rotateToken">${a.token ? 'Make a new token (signs out other devices)' : 'Create an access token'}</button></div>`}
+    </div>
+  </details>`;
+  box.querySelectorAll('details.conn').forEach(d => d.addEventListener('toggle', () => { if (d.open) ui.openConn = d.dataset.conn; else if (ui.openConn === d.dataset.conn) ui.openConn = null; }));
+}
+
+async function enablePush() {
+  const reg = swReg || await registerSW();
+  if (!reg) return toast('Alerts need an https address (or localhost).');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') return toast('Notifications are blocked for this site. Allow them in the browser’s site settings.');
+  const { publicKey } = ui.conn.push;
+  const key = Uint8Array.from(atob(publicKey.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - publicKey.length % 4) % 4)), ch => ch.charCodeAt(0));
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  const ua = navigator.userAgent, label = /iPhone|iPad/.test(ua) ? 'iPhone / iPad' : /Android/.test(ua) ? 'Android phone' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : 'This device';
+  await api('/api/push/subscribe', { subscription: sub.toJSON(), label });
+  ui.pushOn = true; toast('Alerts are on for this device');
+}
+Object.assign(A, {
+  async saveSource(el) {
+    const n = el.dataset.id, v = id => ($('#' + id) || {}).value, body = {};
+    if (n === 'calendar') { if (!v('srcCal')) return toast('Paste the calendar’s secret address first.'); body.calendar = { url: v('srcCal') }; }
+    if (n === 'stripe') { if (!v('srcStripe')) return toast('Paste a Stripe restricted key first.'); body.stripe = { key: v('srcStripe') }; }
+    if (n === 'youtube') body.youtube = { ...(v('srcYtKey') ? { key: v('srcYtKey') } : {}), channel: v('srcYtChannel') };
+    if (n === 'rss') body.rss = { feeds: v('srcRss').split(/\s+/).filter(Boolean) };
+    if (n === 'brief') body.brief = { enabled: $('#srcBriefOn').checked, hour: Number(v('srcBriefHour')) };
+    try { ui.conn.sources = await api('/api/sources', body); toast('Saved'); renderConnections(); if (n !== 'brief' && ui.conn.sources[n].set) A.syncSource({ dataset: { id: n } }); }
+    catch (e) { toast(e.message); }
+  },
+  async syncSource(el) {
+    const n = el.dataset.id; ui.syncing = { ...(ui.syncing || {}), [n]: true }; renderConnections();
+    try { const st = await api(`/api/sources/${n}/sync`); ui.conn.sources.status[n] = st; if (!st.ok) toast(st.msg); }
+    catch (e) { toast(e.message); }
+    ui.syncing[n] = false; renderConnections(); setTimeout(pollEvents, 300);
+  },
+  async pushOn() { try { await enablePush(); } catch (e) { toast('Couldn’t turn on alerts: ' + e.message); } loadConnections(); },
+  async pushOff() {
+    try { const sub = swReg && await swReg.pushManager.getSubscription(); if (sub) { await api('/api/push/unsubscribe', { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch (e) {}
+    ui.pushOn = false; loadConnections();
+  },
+  async pushTest() { try { const r = await api('/api/push/test'); toast(r.sent ? `Test sent to ${r.sent} device${r.sent === 1 ? '' : 's'}` : 'No device got it: ' + (r.errors[0] || 'none signed up')); } catch (e) { toast(e.message); } loadConnections(); },
+  async pushRemove(el) { await api('/api/push/unsubscribe', { endpoint: el.dataset.id }).catch(() => {}); loadConnections(); },
+  async rotateToken() { if (ui.conn.auth.token && !confirm('Make a new token? Other devices will need to sign in again.')) return; try { await api('/api/auth/rotate'); ui.openConn = 'devices'; loadConnections(); } catch (e) { toast(e.message); } },
+  copyLink(el) { const i = $('#' + el.dataset.id); i.select(); navigator.clipboard ? navigator.clipboard.writeText(i.value).then(() => toast('Copied')) : (document.execCommand('copy'), toast('Copied')); },
+  async signOut() { await api('/api/logout').catch(() => {}); location.reload(); },
+});
+
+/* ---------- Revenue: import clients from a CSV ---------- */
+function parseCsv(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',' || ch === ';' || ch === '\t') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+function importClientsCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return toast('The CSV needs a header row and at least one client.');
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  const col = (...names) => head.findIndex(h => names.some(n => h === n || h.includes(n)));
+  const ci = { name: col('name', 'client', 'customer', 'company'), v: col('mrr', 'monthly', 'amount', 'value', 'revenue'), status: col('status', 'state'), since: col('since', 'start', 'created') };
+  if (ci.name < 0 || ci.v < 0) return toast('Couldn’t find the columns. The header needs a name column and a monthly value column (e.g. "name,mrr,status,since").');
+  let added = 0, updated = 0;
+  for (const r of rows.slice(1)) {
+    const name = (r[ci.name] || '').trim(); if (!name) continue;
+    const v = Math.round(Number(String(r[ci.v] || '0').replace(/[^0-9.-]/g, '')) || 0);
+    const raw = ci.status >= 0 ? (r[ci.status] || '').trim().toLowerCase() : 'active';
+    const status = /churn|cancel|lost|inactive/.test(raw) ? 'Churned' : /pend|trial|prospect/.test(raw) ? 'Pending' : 'Active';
+    const since = ci.since >= 0 && r[ci.since] ? (isNaN(Date.parse(r[ci.since])) ? r[ci.since].trim() : new Date(r[ci.since]).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })) : '—';
+    const ex = S.clients.find(c => c.name.toLowerCase() === name.toLowerCase());
+    if (ex) { Object.assign(ex, { v, status, since: since !== '—' ? since : ex.since }); updated++; } else { S.clients.push({ id: uid(), name, v, status, since }); added++; }
+  }
+  log('You', `imported clients from a CSV (${added} added, ${updated} updated)`); save(); render();
+  toast(`Imported: ${added} added, ${updated} updated`);
+}
+document.addEventListener('change', e => {
+  if (e.target.id !== 'csvFile' || !e.target.files[0]) return;
+  const f = e.target.files[0], rd = new FileReader();
+  rd.onload = () => importClientsCsv(String(rd.result)); rd.readAsText(f); e.target.value = '';
+});
 
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || !A[el.dataset.act]) return; A[el.dataset.act](el, e); });
 document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el && C[el.dataset.change]) C[el.dataset.change](el, e); });
@@ -1101,11 +1290,68 @@ setInterval(() => {
   if (arch !== lastArchived) { lastArchived = arch; const a = document.activeElement; if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render(); }
 }, 20000);
 
+/* ---------- sign-in for other devices ---------- */
+let signInWaiter = null;
+function needSignIn() {
+  setStatus('Sign in to see your data', true);
+  if (!$('#signin').open) $('#signin').showModal();
+  return new Promise(r => { signInWaiter = r; });
+}
+$('#signinForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = $('#signinError'); err.textContent = '';
+  try { await api('/api/login', { token: e.target.token.value.trim() }); $('#signin').close(); e.target.reset(); if (signInWaiter) signInWaiter(true); }
+  catch (x) { err.textContent = x.message; }
+});
+$('#signin').addEventListener('cancel', e => e.preventDefault()); // can't be dismissed without signing in
+
+/* ---------- live updates ---------- */
+// The server announces new agent events and saves from other devices as they happen.
+let stream = null;
+function connectStream() {
+  if (!window.EventSource || stream) return;
+  stream = new EventSource('/api/stream');
+  stream.addEventListener('events', () => pollEvents());
+  stream.addEventListener('hello', () => { setStatus('Live · saved to this computer'); pollEvents(); });
+  stream.addEventListener('state', e => { const d = JSON.parse(e.data); if (d.by !== CLIENT_ID) pullState(d.rev); });
+  stream.onerror = () => setStatus('Reconnecting…', true);
+}
+// Another device saved: take its copy, unless you're in the middle of typing or have unsaved changes here.
+let pullWanted = 0;
+async function pullState(rev) {
+  if (pushTimer || !safeToRender()) { pullWanted = rev; return; }
+  pullWanted = 0;
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    const d = r.ok ? await r.json() : null;
+    if (d && d.v === 1 && !pushTimer) { S = upgrade(d); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} applyAccent(); render(); }
+  } catch (e) {}
+}
+setInterval(() => { if (pullWanted) pullState(pullWanted); }, 1500);
+
+/* ---------- installable app + phone alerts ---------- */
+let swReg = null;
+async function registerSW() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+  try { swReg = await navigator.serviceWorker.register('/sw.js'); } catch (e) { console.warn('Service worker not registered', e); }
+  return swReg;
+}
+// While the page is open in the background and this device has no push subscription, approvals still raise a notification.
+function notifyHere(title, body) {
+  if (!document.hidden || ui.pushOn || !window.Notification || Notification.permission !== 'granted') return;
+  try { if (swReg) swReg.showNotification(title, { body, icon: '/icon-192.png', tag: 'approval', data: { url: '/#stack' } }); else new Notification(title, { body }); } catch (e) {}
+}
+
 async function boot() {
   applyAccent(); render();
   if (!/^https?:$/.test(location.protocol)) { setStatus('Saved in this browser'); return; }
+  registerSW().then(async reg => { if (reg && reg.pushManager) { try { ui.pushOn = !!(await reg.pushManager.getSubscription()); } catch (e) {} } });
   try {
-    const m = await fetch('/api/meta', { cache: 'no-store' });
+    // Sign-in link: /#token=… (the token never reaches server logs, and is removed from the address bar)
+    const tm = location.hash.match(/(?:^#|&)token=([^&]+)/);
+    if (tm) { history.replaceState(null, '', location.pathname); try { await api('/api/login', { token: decodeURIComponent(tm[1]) }); } catch (e) { toast(e.message); } }
+    let m = await fetch('/api/meta', { cache: 'no-store' });
+    if (m.status === 401) { await needSignIn(); m = await fetch('/api/meta', { cache: 'no-store' }); }
     const meta = m.ok ? await m.json() : null;
     if (!meta || !meta.ok) throw new Error('no server');
     SERVER = true;
@@ -1115,9 +1361,10 @@ async function boot() {
     else await pushState(); // first run: this computer gets the data you see now
     setStatus('Saved to this computer');
     await pollEvents();
+    connectStream();
     loadRunnerInfo().then(() => { if (route() === 'stack' && safeToRender()) render(); });
-    // Check for updates every 5 seconds, or every 1.5 seconds while the AI runner is working on something.
-    (function loop() { setTimeout(async () => { await pollEvents(); loop(); }, S.tasks.some(t => t.ref && ACTIVE_TASK.includes(t.state)) ? 1500 : 5000); })();
+    // Safety net in case the live connection drops: check now and then anyway.
+    setInterval(() => { if (!stream || stream.readyState !== 1) pollEvents(); }, 15000);
   } catch (e) { SERVER = false; setStatus('Saved in this browser'); }
 }
 boot();

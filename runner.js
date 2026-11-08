@@ -360,6 +360,42 @@ function createRunner({ readState, addEvents }) {
   }
 
   // Tasks that were running when the server stopped can't continue; mark them on the dashboard.
+  // One request, JSON back (for ranking feeds and writing the daily brief). Uses the runner's model settings.
+  async function complete({ system, prompt, schema }) {
+    const cfg = config();
+    if (cfg.provider === 'off') throw new Error('turn on the AI runner in Settings');
+    const parse = text => {
+      try { return JSON.parse(text); } catch {}
+      const m = String(text || '').match(/\{[\s\S]*\}/);
+      if (m) { try { return JSON.parse(m[0]); } catch {} }
+      throw new Error('The model\'s answer wasn\'t valid JSON.');
+    };
+    if (cfg.provider === 'claude') {
+      const Anthropic = loadSdk();
+      if (!Anthropic) throw new Error('Claude needs the Anthropic SDK. In the Mission Control folder run: npm install');
+      try {
+        const r = await new Anthropic().beta.messages.create({
+          model: cfg.model, max_tokens: 8000, system, messages: [{ role: 'user', content: prompt }],
+          output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+          ...(FALLBACK_MODELS.has(cfg.model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+        });
+        if (r.stop_reason === 'refusal') throw new Error('The model declined.');
+        return parse(r.content.filter(b => b.type === 'text').map(b => b.text).join(''));
+      } catch (err) { throw new Error(friendlyError(err, cfg)); }
+    }
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.LLM_API_KEY) headers.Authorization = 'Bearer ' + process.env.LLM_API_KEY;
+    const ask = async withFormat => fetch(cfg.url + '/chat/completions', { method: 'POST', headers, signal: AbortSignal.timeout(180000),
+      body: JSON.stringify({ model: cfg.model, stream: false, messages: [{ role: 'system', content: system + '\n\nReply with JSON only, matching this schema: ' + JSON.stringify(schema) }, { role: 'user', content: prompt }],
+        ...(withFormat ? { response_format: { type: 'json_schema', json_schema: { name: 'answer', schema } } } : {}) }) });
+    let r;
+    try { r = await ask(true); if (r.status === 400) r = await ask(false); }
+    catch { throw new Error(`Can't reach the model server at ${cfg.url}.`); }
+    if (!r.ok) throw new Error(`The model server said ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const j = await r.json();
+    return parse(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
+  }
+
   // Looks at the saved state plus queued events the dashboard hasn't applied yet.
   function recover(queued = []) {
     const s = readState() || {};
@@ -376,7 +412,7 @@ function createRunner({ readState, addEvents }) {
     if (pending.length) emit(pending.map(([ref]) => ({ type: 'approval', ref, state: 'expired' })));
   }
 
-  return { submit, control, status, recover };
+  return { submit, control, status, recover, complete };
 }
 
 module.exports = { createRunner, TOOLS, isPublicIp };

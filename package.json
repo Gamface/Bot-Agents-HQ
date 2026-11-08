@@ -1,6 +1,6 @@
 {
   "name": "bot-agents-hq",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Mission Control — a local command center for your AI agent team",
   "private": true,
   "main": "server.js",

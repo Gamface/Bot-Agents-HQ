@@ -17,7 +17,7 @@ A personal command center for running a small team of AI agents. Run it on your 
 | **Notes** | Multiple notes, autosave, character/word count, Write / Preview (`#` headings, `-` bullets) |
 | **Stack** | The coworker stack (Hermes, OpenBot, OpenDots, OpenMuse, Cua Driver) with your specialist coworkers listed under OpenDots, how an action flows, approval cards and the action log |
 
-Also: **⌘K / Ctrl+K** searches everything, and **Settings** (gear icon) sets your name, accent color, revenue goal and goal date.
+Also: **⌘K / Ctrl+K** searches everything, and **Settings** (gear icon) sets your name, accent color, goals, the AI runner, data sources, phone alerts and access from other devices.
 
 ## Run it on your computer (recommended)
 
@@ -32,12 +32,13 @@ You need [Node.js](https://nodejs.org) 18 or newer. Nothing else to install. To 
 
 The top bar shows **Saved to this computer** when it's connected.
 
-Options: `PORT=5000 ./start.sh` uses another port. `HOST=0.0.0.0 node server.js` lets other devices on your Wi-Fi open it at `http://<your-computer's-IP>:4000`. There's no login, so only do that on a network you trust.
+Options: `PORT=5000 ./start.sh` uses another port. To use it from your phone, see [Use it on your phone](#use-it-on-your-phone).
 
 ## Your data
 
 - When running locally, everything is saved in the **`data/` folder** next to `server.js`: `data/state.json`, plus hourly snapshots in `data/backups/` (the last 3 days are kept). The folder is ignored by git, so it never gets pushed.
-- Any browser on this computer that opens http://localhost:4000 sees the same data.
+- Every browser that opens it sees the same data, live: a change on one device shows up on the others right away.
+- Keys and secret addresses for data sources are kept in `data/sources.json`, and the access token in `data/auth.json`. Neither is part of the dashboard data, backups or exports.
 - On first run it starts with **sample data**. Open Settings (gear icon) → **Start empty** to clear it (your settings are kept), or **Reload sample data** to bring it back.
 - Settings → **Export backup** / **Import backup** moves data between computers, or between the local server and a hosted copy.
 - If the server stops, the page keeps saving in the browser and the top bar turns amber. Restart the server and it picks up again.
@@ -46,7 +47,7 @@ You can also just double-click `index.html` without the server. It works the sam
 
 ## Connecting real agents
 
-While the server is running, any agent or script can send updates to **`POST http://localhost:4000/api/events`**. The open dashboard picks them up within about 5 seconds. Try `sh examples/send-events.sh` to see each kind.
+While the server is running, any agent or script can send updates to **`POST http://localhost:4000/api/events`**. The open dashboard shows them right away. Try `sh examples/send-events.sh` to see each kind.
 
 ```sh
 curl -X POST http://localhost:4000/api/events -H 'Content-Type: application/json' \
@@ -66,6 +67,11 @@ curl -X POST http://localhost:4000/api/events -H 'Content-Type: application/json
 | `project` | `title`, `desc`, `priority` (HIGH/MEDIUM/LOW), `col` (0 Backlog, 1 In Progress, 2 Done) | Projects board |
 | `decision` | `q` (question), `d` (decision), `who` | Executive decisions log |
 | `task` | `ref`, `name`, `who`, `state` (queued/running/paused/waiting/done/stopped/failed), `note` | Background tasks: a new `ref` adds one, a known `ref` updates it |
+| `client` | `ext` (your id for it), `name`, `v` (monthly $), `status` (Active/Pending/Churned), `since` | Revenue clients, updated by `ext` |
+| `youtube` | `subs` | YouTube subscriber count |
+| `brief` | `date` (YYYY-MM-DD), `items` [{`title`, `summary`, `imp`}] | Daily brief for that day |
+
+`meeting` also takes an `ext` id: sending the same `ext` again updates that meeting instead of adding another, and `{"ext": …, "cancelled": true}` removes it.
 
 You can send one event or an array of them. To find out whether you approved something, an agent reads `GET /api/state` and looks for the matching `approvals[].ref`, whose `state` is `pending`, `approved` or `denied`.
 
@@ -107,7 +113,7 @@ Set `"env": { "MC_URL": "http://localhost:5000" }` if you changed the port.
 | `request_approval` | Puts an approval card on the dashboard and **waits for you** to click Approve or Deny (up to 110 seconds), then tells the agent the answer |
 | `check_approval` | Look up or keep waiting on an approval by its `ref` |
 
-Changes made through MCP go through the same queue as `/api/events`, so they appear in the open dashboard within about 5 seconds. If the dashboard isn't open, they're applied the next time you open it, and tool results say so. Try asking Claude: *"Check Mission Control, then add yourself as a coworker and log what you're working on."*
+Changes made through MCP go through the same queue as `/api/events`, so they appear in the open dashboard right away. If the dashboard isn't open, they're applied the next time you open it, and tool results say so. Try asking Claude: *"Check Mission Control, then add yourself as a coworker and log what you're working on."*
 
 ## The AI runner: tasks that actually get done
 
@@ -135,10 +141,38 @@ Every tool the runner uses has a rule, which you set on the **Stack** screen:
 
 In **Background tasks** on the Command Center you can **Pause** a task (it stops before its next step), **Resume** it, **Stop** it (■), or **Retry** a failed one. Pause on the live view pauses that coworker's task too. Each coworker works on one task at a time; others queue. If Mission Control restarts mid-task, the task is marked Failed so you can retry it.
 
+## Data sources: screens that fill themselves
+
+Set these up in **Settings → Data sources**. Each one syncs on its own, and **Sync now** runs it right away. The line under each source shows when it last synced and what it found, or what went wrong.
+
+| Source | What you need | Fills | How often |
+|---|---|---|---|
+| **Google Calendar** (or any calendar with an iCal link) | Google Calendar → Settings → your calendar → **Secret address in iCal format** | Meetings for the next 14 days. Repeating meetings, moved instances and cancellations are handled; your prep notes and agenda are kept. | 15 min |
+| **Stripe** | A **restricted key** with Read access to Subscriptions and Customers | Revenue clients and MRR. Yearly and weekly plans are converted to monthly. | 30 min |
+| **YouTube** | A YouTube Data API v3 key and your @handle or channel ID | Subscriber count | hourly |
+| **RSS / Atom feeds** | Feed addresses, one per line | Intel. When the AI runner is on, its model ranks each new item hot / notable / reference, picks a category and says why it matters to you, based on your priorities and projects. | 30 min |
+| **Daily brief** | The AI runner turned on | Each morning at the hour you pick, the model writes your top 3 for the day from meetings, priorities, approvals and intel. It replaces the automatic brief on the Dashboard and Intel screens for that day. | daily |
+
+No Stripe? On the **Revenue** screen, **Import CSV** takes a file with a name column and a monthly value column (status and start date are optional; "trial" counts as Pending and "cancelled" as Churned). Clients with the same name are updated.
+
+## Use it on your phone
+
+**1. Let your phone reach it, with a token.** Every device other than this computer has to sign in with an access token. Requests from this computer never need one.
+
+- **Same Wi-Fi:** start with `HOST=0.0.0.0 ./start.sh` (Windows: `set HOST=0.0.0.0` then `start.bat`). The first time, a token is created and the terminal prints a sign-in link for your phone. The link is also in **Settings → Other devices**, with **Copy** buttons.
+- **From anywhere, with https (recommended):** keep it on this computer and use [Tailscale](https://tailscale.com): `tailscale serve 4000`, then open the https address it shows on your phone. Create a token first in **Settings → Other devices** (traffic through a tunnel always needs one).
+- **Make a new token** signs every other device out. Scripts and agents on other machines send `Authorization: Bearer <token>`.
+
+**2. Install it.** Open it in your phone's browser and choose **Add to Home Screen** (iPhone: Share → Add to Home Screen; Android: ⋮ → Install app). It opens full-screen like an app, and still opens with your last data when you're offline.
+
+**3. Turn on alerts.** In **Settings → Phone alerts**, tap **Turn on for this device**, then **Send a test alert**. You'll get a notification whenever an agent is waiting for your approval, even when the app is closed. Tapping it opens the approval. On iPhone this works from the Home Screen app (iOS 16.4 or newer).
+
+Installing and alerts need a secure address: https (such as the Tailscale one) or http://localhost. A plain `http://192.168…` address works for viewing and editing, but phones won't install it or allow alerts.
+
 ### Other ways to host
 
 - **GitHub Pages:** repo Settings → Pages → `main` / root. It serves `index.html` only, so data stays in each browser and the agent API isn't available.
-- **Any always-on machine** (home server, Raspberry Pi, VPS): copy the folder and run `node server.js` there. If it's reachable from the internet, put it behind a login (a reverse proxy with auth, Tailscale, or similar), because the server has no accounts of its own.
+- **Any always-on machine** (home server, Raspberry Pi, VPS): copy the folder and run `node server.js` there. It needs the access token from any other device. For access over the internet, use https (Tailscale, or a reverse proxy with TLS) so the token isn't sent in the clear.
 
 ## Customize
 
