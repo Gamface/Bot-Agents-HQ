@@ -11,6 +11,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { createMcp } = require('./mcp');
+const { createRunner } = require('./runner');
 
 const ROOT = __dirname;
 const DATA = process.env.DATA_DIR || path.join(ROOT, 'data');
@@ -57,7 +58,7 @@ const readBody = req => new Promise((resolve, reject) => {
   req.on('error', reject);
 });
 
-const EVENT_TYPES = new Set(['activity', 'agent', 'intel', 'approval', 'action', 'priority', 'meeting', 'note', 'project', 'decision']);
+const EVENT_TYPES = new Set(['activity', 'agent', 'intel', 'approval', 'action', 'priority', 'meeting', 'note', 'project', 'decision', 'task']);
 
 // Queue agent events for the dashboard to apply. Checks the whole batch first, so a rejected batch saves nothing.
 function addEvents(list) {
@@ -80,6 +81,9 @@ const mcp = createMcp({
   addEvents,
   dashboardSeenAt: () => dashboardSeenAt,
 });
+
+const runner = createRunner({ readState: () => (fs.existsSync(STATE) ? readJSON(STATE, null) : null), addEvents });
+runner.recover(events);
 
 // Requests that change data must come from this dashboard or a script — not from another website open in your browser.
 function sameOriginOrScript(req) {
@@ -123,6 +127,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, { ok: true, ids: addEvents(Array.isArray(body) ? body : [body]) });
     }
 
+    // Built-in agent runner: start, pause, resume and stop tasks.
+    if (p === '/api/runner' && req.method === 'GET') return send(res, 200, runner.status());
+    if (p === '/api/tasks' && req.method === 'POST') return send(res, 201, runner.submit(await readBody(req)));
+    const m = p.match(/^\/api\/tasks\/([\w-]+)\/(pause|resume|stop)$/);
+    if (m && req.method === 'POST') return send(res, 200, runner.control(m[1], m[2]));
+
     // MCP (Model Context Protocol) over Streamable HTTP: one JSON-RPC message or batch per POST, JSON reply.
     if (p === '/mcp') {
       if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }); return res.end(); }
@@ -136,7 +146,7 @@ const server = http.createServer(async (req, res) => {
 
     send(res, 404, { error: 'Not found' });
   } catch (err) {
-    send(res, err.code === 413 || err.code === 400 ? err.code : 500, { error: err.message });
+    send(res, [400, 404, 409, 413].includes(err.code) ? err.code : 500, { error: err.message });
   }
 });
 

@@ -1,6 +1,6 @@
 # Bot Agents HQ — Mission Control
 
-A personal command center for running a small team of AI agents. Run it on your own computer with one command. It saves to a folder on your machine and gives your agents an address to send updates to. No build step, no dependencies.
+A personal command center for running a small team of AI agents. Run it on your own computer with one command. It saves to a folder on your machine and gives your agents an address to send updates to. No build step and nothing required to install (using Claude as the AI runner needs one optional `npm install`).
 
 ## Screens
 
@@ -9,7 +9,7 @@ A personal command center for running a small team of AI agents. Run it on your 
 | **Dashboard** | Greeting and live clock, goal / projects / tasks / days-to-goal metrics, editable top priorities, activity feed, agent status, today's meetings, daily brief |
 | **Projects** | Kanban board (Backlog → In Progress → Done) — add, edit, move, delete |
 | **Timeline** | Phases with date ranges and milestones; the current phase glows; overall progress |
-| **Command Center** | Agent cards with status, details, capabilities and activity log · send tasks · live browser view with Pause / Take control · visible plan · background tasks (pause/resume/retry) · follow-up queue · executive decisions log |
+| **Command Center** | Agent cards with status, details, capabilities and activity log · send tasks · live browser view with Pause / Take control · visible plan · background tasks run by the AI runner (pause/resume/stop/retry) · follow-up queue · executive decisions log |
 | **Meetings** | Today's meetings with live countdowns, expandable prep cards (agenda checklist, notes that save as you type, action items), upcoming list, automatic archive |
 | **Revenue** | MRR from active clients, goal ring, run rate, monthly growth needed, 6-month chart with goal line, client list with status and filters, "Close month" to save history |
 | **YouTube** | Subscriber level with XP bar and milestones, 5-stage idea pipeline, monthly content calendar |
@@ -21,7 +21,7 @@ Also: **⌘K / Ctrl+K** searches everything, and **Settings** (gear icon) sets y
 
 ## Run it on your computer (recommended)
 
-You need [Node.js](https://nodejs.org) 18 or newer. Nothing else to install.
+You need [Node.js](https://nodejs.org) 18 or newer. Nothing else to install. To use Claude as the AI runner, also run `npm install` once.
 
 1. Download the repo: **Code → Download ZIP** and unzip it, or `git clone https://github.com/Gamface/Bot-Agents-HQ.git`
 2. Start it:
@@ -65,6 +65,7 @@ curl -X POST http://localhost:4000/api/events -H 'Content-Type: application/json
 | `note` | `body` | Notes |
 | `project` | `title`, `desc`, `priority` (HIGH/MEDIUM/LOW), `col` (0 Backlog, 1 In Progress, 2 Done) | Projects board |
 | `decision` | `q` (question), `d` (decision), `who` | Executive decisions log |
+| `task` | `ref`, `name`, `who`, `state` (queued/running/paused/waiting/done/stopped/failed), `note` | Background tasks: a new `ref` adds one, a known `ref` updates it |
 
 You can send one event or an array of them. To find out whether you approved something, an agent reads `GET /api/state` and looks for the matching `approvals[].ref`, whose `state` is `pending`, `approved` or `denied`.
 
@@ -108,24 +109,31 @@ Set `"env": { "MC_URL": "http://localhost:5000" }` if you changed the port.
 
 Changes made through MCP go through the same queue as `/api/events`, so they appear in the open dashboard within about 5 seconds. If the dashboard isn't open, they're applied the next time you open it, and tool results say so. Try asking Claude: *"Check Mission Control, then add yourself as a coworker and log what you're working on."*
 
-### A local LLM agent (Ollama, Podman AI Lab)
+## The AI runner: tasks that actually get done
 
-`examples/llm-agent.js` turns a coworker into an agent backed by a model on your computer. Send it a task from **Command Center → Send task** and it asks the model, shows its progress, and saves the answer to **Notes**. It works with any server that speaks the OpenAI-style `/v1/chat/completions` API.
+Turn it on in **Settings → AI runner**. From then on, a task you send from **Command Center → Send task** is worked on by a model. The coworker shows up as Busy, the live view shows each step, and the answer is saved to **Notes**.
 
-```sh
-# Ollama (default address http://localhost:11434/v1)
-node examples/llm-agent.js
+Pick the model provider:
 
-# Podman AI Lab model service: use the port it shows for the service
-LLM_URL=http://localhost:34067/v1 LLM_MODEL=<model name> node examples/llm-agent.js
+- **Claude (Anthropic API).** One-time setup: run `npm install` in the Mission Control folder. That installs the official Anthropic SDK, the only dependency, and it's optional. Then start Mission Control with your key: `ANTHROPIC_API_KEY=sk-ant-... ./start.sh` (Windows: `set ANTHROPIC_API_KEY=sk-ant-...` then `start.bat`), or sign in once with `ant auth login`. The default model is `claude-opus-5-5`; type another model name in Settings to change it. Your key is never saved in the dashboard, and usage is billed to your Anthropic account.
+- **Local model (Ollama, Podman AI Lab, LM Studio…).** Any server with an OpenAI-style `/v1/chat/completions` API. The default address is Ollama's, `http://localhost:11434/v1`. For a Podman AI Lab model service, use the port it shows. Pick a model that supports tool calling (for example `llama3.2` or `qwen2.5`). Models without it still answer, just without tools. If the server wants a key, set `LLM_API_KEY`. To run Ollama with Podman: `podman run -d --name ollama -p 11434:11434 -v ollama:/root/.ollama docker.io/ollama/ollama`, then `podman exec ollama ollama pull llama3.2`.
 
-# One task, then exit
-node examples/llm-agent.js "Draft a cold email to a dentist"
-```
+### Rules and approvals
 
-Other settings: `AGENT_NAME` (default `Scout`; a new name adds a new coworker), `AGENT_ROLE`, `SYSTEM` (system prompt), `LLM_API_KEY`, `MC_URL`. To find a server's model names, open `<LLM_URL>/models`.
+Every tool the runner uses has a rule, which you set on the **Stack** screen:
 
-To run Ollama with Podman: `podman run -d --name ollama -p 11434:11434 -v ollama:/root/.ollama docker.io/ollama/ollama`, then `podman exec ollama ollama pull llama3.2`.
+| Tool | Default | What it does |
+|---|---|---|
+| Read a web page | ALLOW | Fetches a public web page. Addresses on this computer or your private network are always blocked. |
+| Save a note · Add intel | ALLOW | Adds to Notes or the Intel feed |
+| Add a priority · Add a project · Log a decision | ASK | Changes your plan |
+| Send a message | ASK | Posts `{"text": …}` to your webhook (Slack, n8n, Zapier…). Only available when `MC_WEBHOOK_URL` is set. |
+
+- **ALLOW** runs right away and is logged in the action log.
+- **ASK** puts an approval card on the Stack screen, and **the coworker waits** until you click Approve or Deny. Deny means it continues without that step. After 30 minutes with no answer, it's treated as denied.
+- **REFUSE** blocks the tool, and the coworker is told not to try it.
+
+In **Background tasks** on the Command Center you can **Pause** a task (it stops before its next step), **Resume** it, **Stop** it (■), or **Retry** a failed one. Pause on the live view pauses that coworker's task too. Each coworker works on one task at a time; others queue. If Mission Control restarts mid-task, the task is marked Failed so you can retry it.
 
 ### Other ways to host
 

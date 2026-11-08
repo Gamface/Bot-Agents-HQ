@@ -154,6 +154,15 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(4px)}
       <label class="field">Monthly revenue goal ($)<input class="input" name="goalMrr" type="number" min="1" step="100"></label>
       <label class="field">Goal date<input class="input" name="goalDate" type="date"></label>
     </div>
+    <fieldset class="stack" style="--gap:10px;border:1px solid var(--line2);border-radius:12px;padding:12px 14px">
+      <legend class="small strong" style="padding:0 6px;color:var(--muted)">AI runner · does the work when you send a task</legend>
+      <div class="grid" style="--min:180px">
+        <label class="field">Model provider<select class="input" name="runProvider" data-change="runProvider"><option value="off">Off (log tasks only)</option><option value="claude">Claude (Anthropic API)</option><option value="local">Local model (Ollama, Podman AI Lab…)</option></select></label>
+        <label class="field">Model<input class="input" name="runModel" autocomplete="off"></label>
+      </div>
+      <label class="field" id="runUrlField">Server address (OpenAI-compatible)<input class="input" name="runUrl" placeholder="http://localhost:11434/v1" autocomplete="off"></label>
+      <p class="small muted" id="runnerNote"></p>
+    </fieldset>
     <div class="flex" style="flex-wrap:wrap;margin-top:4px">
       <button class="btn primary" value="save" data-act="saveSettings">Save</button>
       <button class="btn" type="button" data-act="exportData">Export backup</button>
@@ -348,6 +357,25 @@ async function pushState() {
     setStatus('Saved to this computer');
   } catch (e) { setStatus('Server unreachable — saving in browser', true); }
 }
+// Background task states: [label, color, button]. Tasks with a ref are run by the built-in AI runner.
+const TASK_STATES = { queued: ['Queued', 'var(--muted)', ''], running: ['Running', 'var(--accent)', 'Pause'], paused: ['Paused', 'var(--warn)', 'Resume'],
+  waiting: ['Waiting for you', 'var(--warn)', 'Review'], done: ['Done', 'var(--accent)', ''], stopped: ['Stopped', 'var(--muted)', 'Retry'], failed: ['Failed', 'var(--bad)', 'Retry'] };
+const ACTIVE_TASK = ['queued', 'running', 'paused', 'waiting'];
+const runnerOn = () => SERVER && S.settings.runner && ['claude', 'local'].includes(S.settings.runner.provider);
+async function api(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Mission Control said ' + r.status);
+  return d;
+}
+async function startRun(agent, text) {
+  try { await api('/api/tasks', { agent, text }); setTimeout(pollEvents, 300); }
+  catch (err) { toast(err.message); }
+}
+async function controlRun(t, action) {
+  try { await api(`/api/tasks/${encodeURIComponent(t.ref)}/${action}`); setTimeout(pollEvents, 300); }
+  catch (err) { t.state = 'failed'; t.note = err.message; save(); render(); }
+}
 const findAgent = n => { const x = String(n || '').toLowerCase(); return S.agents.find(a => a.id === x || a.name.toLowerCase() === x); };
 function applyEvent(e) {
   const who = e.who || e.agent || 'Agent';
@@ -364,12 +392,21 @@ function applyEvent(e) {
       a.last = Date.now(); break;
     }
     case 'intel': S.intel.unshift({ id: uid(), title: e.title || 'Untitled', summary: e.summary || '', source: e.source || who, cat: e.cat || 'AI News', imp: ['hot', 'notable', 'ref'].includes(e.imp) ? e.imp : 'notable', date: Date.now() }); break;
-    case 'approval': S.approvals.push({ id: uid(), ref: e.ref || null, who, what: e.what || '', rule: e.rule || 'ask first', state: 'pending' }); toast(who + ' is asking for approval'); break;
+    case 'approval': if (e.ref && e.state) { const ex = S.approvals.find(a => a.ref === e.ref); if (ex && ex.state === 'pending') ex.state = String(e.state); break; }
+      S.approvals.push({ id: uid(), ref: e.ref || null, who, what: e.what || '', rule: e.rule || 'ask first', state: 'pending' }); toast(who + ' is asking for approval'); break;
     case 'action': S.actionLog.unshift({ t: Date.now(), outcome: ['ALLOW', 'ASK', 'REFUSE'].includes(e.outcome) ? e.outcome : 'ALLOW', who, what: e.what || '' }); break;
     case 'priority': if (e.text) S.priorities.push({ id: uid(), text: e.text, tag: String(e.tag || 'GENERAL').toUpperCase(), done: false }); break;
     case 'meeting': { const st = new Date(e.start).getTime(); if (e.title && !isNaN(st)) S.meetings.push({ id: uid(), title: e.title, start: st, dur: Number(e.dur) || 30, type: e.mtype || 'Zoom', attendees: e.attendees || '—', agenda: (e.agenda || []).map(t => ({ id: uid(), text: t, done: false })), notes: e.notes || '', actions: [] }); break; }
     case 'note': if (e.body) S.notes.unshift({ id: uid(), saved: Date.now(), body: String(e.body) }); break;
     case 'project': if (e.title) { const col = [0, 1, 2].includes(Number(e.col)) ? Number(e.col) : 0; S.projects.push({ id: uid(), title: String(e.title), desc: String(e.desc || ''), priority: ['HIGH', 'MEDIUM', 'LOW'].includes(e.priority) ? e.priority : 'MEDIUM', col, created: Date.now() }); log(who, `added project “${e.title}”`); } break;
+    case 'task': if (e.ref) {
+      let t = S.tasks.find(x => x.ref === e.ref);
+      if (!t) { t = { id: uid(), ref: String(e.ref), name: String(e.name || 'Task'), who: String(e.who || who), state: 'queued', note: '' }; S.tasks.unshift(t); }
+      if (TASK_STATES[e.state]) t.state = e.state;
+      if (e.note !== undefined) t.note = String(e.note);
+      const old = S.tasks.filter(x => x.ref && !ACTIVE_TASK.includes(x.state));
+      if (old.length > 15) { const drop = new Set(old.slice(15)); S.tasks = S.tasks.filter(x => !drop.has(x)); }
+    } break;
     case 'decision': if (e.q && e.d) S.decisions.unshift({ id: uid(), date: Date.now(), q: String(e.q), d: String(e.d), who: e.who || '—' }); break;
   }
 }
@@ -593,7 +630,7 @@ VIEWS.agents = () => {
       <div class="card tight"><p class="label" style="margin-bottom:10px">Plan${sess ? ' · ' + esc(sel.name) : ''}</p>
         <ol class="clean stack" style="--gap:10px">${steps.map((s, i) => { const d = i < sess.cur, n = i === sess.cur; return `<li class="flex" style="align-items:flex-start"><span style="flex:0 0 22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:${d ? 'var(--accent-soft)' : n ? 'var(--accent)' : 'rgba(255,255,255,.07)'};color:${d ? 'var(--accent)' : n ? 'var(--on-accent)' : 'var(--dim)'}">${d ? '✓' : i + 1}</span><span style="color:${d ? 'var(--dim)' : n ? '#fff' : 'var(--text2)'}">${esc(s)}</span></li>`; }).join('') || '<li class="muted small">No active plan.</li>'}</ol></div>
       <div class="card tight"><p class="label" style="margin-bottom:6px">Background tasks</p>
-        <ul class="clean">${S.tasks.map(t => { const st = { running: ['Running', 'var(--accent)', 'Pause'], paused: ['Paused', 'var(--warn)', 'Resume'], failed: ['Failed', 'var(--bad)', 'Retry'] }[t.state]; return `<li class="flex" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1;min-width:0"><div class="strong" style="font-size:13px">${esc(t.name)}</div><div class="small muted">${esc(t.who)} · <span style="color:${st[1]};font-weight:600">${st[0]}</span>${t.note ? ' · ' + esc(t.note) : ''}</div></div><button class="btn sm" data-act="taskAct" data-id="${t.id}">${st[2]}</button><button class="x" data-act="delTask" data-id="${t.id}" aria-label="Remove task">×</button></li>`; }).join('') || '<li class="muted small">None running.</li>'}</ul>
+        <ul class="clean">${S.tasks.map(t => { const st = TASK_STATES[t.state] || TASK_STATES.running; const active = t.ref && ACTIVE_TASK.includes(t.state); return `<li class="flex" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)"><div style="flex:1;min-width:0"><div class="strong" style="font-size:13px">${esc(t.name)}</div><div class="small muted">${esc(t.who)} · <span style="color:${st[1]};font-weight:600">${st[0]}</span>${t.note ? ' · ' + esc(t.note) : ''}</div></div>${st[2] ? `<button class="btn sm" data-act="taskAct" data-id="${t.id}">${st[2]}</button>` : ''}<button class="x" data-act="delTask" data-id="${t.id}" aria-label="${active ? 'Stop task' : 'Remove task'}" title="${active ? 'Stop' : 'Remove'}">${active ? '■' : '×'}</button></li>`; }).join('') || '<li class="muted small">None running.</li>'}</ul>
         <form data-submit="addTask" class="form-row" style="margin-top:10px"><label class="sr" for="bgTask">New background task</label><input id="bgTask" name="name" class="input" placeholder="Start a background task for ${esc(sel.name)}…" style="height:40px"><button class="btn sm">Start</button></form></div>
       <div class="card tight"><p class="label">Follow-up queue</p><p class="small muted" style="margin:2px 0 10px">Delivered when the coworker finishes its current step.</p>
         <ul class="clean stack" style="--gap:6px;margin-bottom:10px">${S.queue.map(q => `<li class="flex" style="padding:6px 6px 6px 10px;border-radius:8px;background:rgba(255,255,255,.04)"><span class="small strong" style="color:var(--accent)">→ ${esc(q.to)}</span><span style="flex:1;min-width:0;font-size:13px;color:var(--text2)">${esc(q.text)}</span><button class="x" data-act="delQueue" data-id="${q.id}" aria-label="Remove from queue">×</button></li>`).join('')}</ul>
@@ -863,6 +900,14 @@ VIEWS.stack = () => {
       ${[['1 · PLAN', 'Visible plan', 'OpenMuse'], ['2 · RULES CHECK', 'Allow · Ask you · Refuse', 'OpenBot'], ['3 · ACT', 'Browser or desktop app', 'OpenMuse live view · Cua Driver'], ['4 · REMEMBER', 'Logged, saved as a skill', 'OpenBot log · Hermes skills']].map((s, i) => `${i ? '<span aria-hidden="true" class="flex muted" style="font-size:18px">→</span>' : ''}<div class="sub" style="flex:1 1 200px;${i === 1 ? 'border-color:var(--accent)' : ''}"><p class="label">${s[0]}</p><div class="strong" style="margin-top:6px">${s[1]}</div><div class="small muted">${s[2]}</div></div>`).join('')}
     </div>
   </section>
+  <section class="card stack" style="--gap:12px" aria-label="Rules">
+    <div class="between"><div><h2>Rules for the AI runner</h2><p class="small muted" style="margin-top:4px">What a coworker may do on its own when it works on a task you sent. <b>Ask</b> pauses it until you approve below. <b>Refuse</b> blocks it.</p></div>
+      <span class="tag ${runnerOn() ? 'accent' : ''}">${runnerOn() ? 'RUNNER ON · ' + esc(S.settings.runner.provider === 'claude' ? 'CLAUDE' : 'LOCAL MODEL') : 'RUNNER OFF'}</span></div>
+    ${ui.runner ? `<div class="grid" style="--min:250px;gap:8px">${ui.runner.tools.map(t => { const v = (S.settings.policies || {})[t.name] || t.default; return `<label class="sub between" style="--gap:10px;padding:8px 12px"><span><span class="strong">${esc(t.title)}</span><span class="mono small muted" style="display:block">${esc(t.name)}${v !== t.default ? ' · default ' + t.default : ''}</span></span>
+      <select class="input" style="width:auto;height:34px" data-change="setPolicy" data-id="${t.name}" data-title="${esc(t.title)}" aria-label="Rule for ${esc(t.title)}">${['ALLOW', 'ASK', 'REFUSE'].map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`; }).join('')}</div>
+      ${runnerOn() ? '' : '<p class="small muted">Turn the runner on in Settings (gear icon) so tasks you send are actually worked on.</p>'}`
+      : `<p class="small muted">${SERVER ? 'Loading…' : 'Start Mission Control on this computer (start.bat / start.sh) to use the AI runner and its rules.'}</p>`}
+  </section>
   <section class="row">
     <div class="side stack" style="flex:1 1 420px">
       ${pending.map(a => `<div class="card stack" style="border-color:rgba(245,180,84,.4);background:rgba(245,180,84,.05)"><div class="between"><h2>Approval card</h2><span class="tag warn">WAITING ON YOU</span></div>
@@ -879,8 +924,11 @@ VIEWS.stack = () => {
 const byId = (arr, id) => arr.find(x => x.id === id);
 const agentByName = n => S.agents.find(a => a.name === n);
 const A = {
-  openSettings() { const f = fields($('#settingsForm')); f.userName.value = S.settings.name; f.goalMrr.value = S.settings.goalMrr; f.goalDate.value = S.settings.goalDate; ui.tmpAccent = S.settings.accent; renderSwatches(); $('#settings').showModal(); },
-  saveSettings(el, e) { e.preventDefault(); const f = fields($('#settingsForm')); S.settings.name = f.userName.value.trim(); S.settings.goalMrr = Math.max(1, Number(f.goalMrr.value) || 1); S.settings.goalDate = f.goalDate.value || S.settings.goalDate; S.settings.accent = ui.tmpAccent || S.settings.accent; applyAccent(); save(); $('#settings').close(); render(); toast('Settings saved'); },
+  openSettings() { const f = fields($('#settingsForm')); f.userName.value = S.settings.name; f.goalMrr.value = S.settings.goalMrr; f.goalDate.value = S.settings.goalDate; ui.tmpAccent = S.settings.accent; renderSwatches();
+    const run = S.settings.runner || {}; f.runProvider.value = run.provider || 'off'; f.runModel.value = run.model || ''; f.runUrl.value = run.url || ''; ui.runModels = { [run.provider]: run.model || '' }; updateRunnerFields(); loadRunnerInfo().then(updateRunnerFields);
+    $('#settings').showModal(); },
+  saveSettings(el, e) { e.preventDefault(); const f = fields($('#settingsForm')); S.settings.name = f.userName.value.trim(); S.settings.goalMrr = Math.max(1, Number(f.goalMrr.value) || 1); S.settings.goalDate = f.goalDate.value || S.settings.goalDate; S.settings.accent = ui.tmpAccent || S.settings.accent; applyAccent();
+    S.settings.runner = { provider: f.runProvider.value, model: f.runModel.value.trim(), url: f.runUrl.value.trim() }; save(); $('#settings').close(); render(); toast('Settings saved'); },
   pickSwatch(el) { ui.tmpAccent = el.dataset.v; renderSwatches(); document.documentElement.style.setProperty('--accent', ui.tmpAccent); },
   exportData() { const b = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'mission-control-backup-' + isoDay(new Date()) + '.json'; a.click(); URL.revokeObjectURL(a.href); },
   resetSample() { if (!confirm('Replace everything with the sample data?')) return; const le = S.lastEventId; S = seed(); S.lastEventId = le; save(); applyAccent(); $('#settings').close(); render(); toast('Sample data loaded'); },
@@ -895,12 +943,25 @@ const A = {
   pickAgent(el) { ui.agent = el.dataset.id; render(); },
   toggleStack(el) { ui.stackOpen = ui.stackOpen === el.dataset.id ? null : el.dataset.id; render(); },
   openAgent(el) { ui.agent = el.dataset.id; if (location.hash === '#agents') render(); else location.hash = '#agents'; },
-  togglePause(el) { const a = byId(S.agents, el.dataset.id); ui.paused[a.id] = !ui.paused[a.id]; a.log.unshift({ t: Date.now(), x: ui.paused[a.id] ? 'Paused by you' : 'Resumed' }); save(); render(); },
+  togglePause(el) { const a = byId(S.agents, el.dataset.id); ui.paused[a.id] = !ui.paused[a.id];
+    S.tasks.filter(t => t.ref && t.who === a.name && ['running', 'paused', 'waiting', 'queued'].includes(t.state)).forEach(t => controlRun(t, ui.paused[a.id] ? 'pause' : 'resume')); a.log.unshift({ t: Date.now(), x: ui.paused[a.id] ? 'Paused by you' : 'Resumed' }); save(); render(); },
   toggleControl(el) { const a = byId(S.agents, el.dataset.id); const taking = ui.control !== a.id; ui.control = taking ? a.id : null; a.log.unshift({ t: Date.now(), x: taking ? 'You took control of the browser' : 'You handed the browser back' }); save(); render(); },
   stepNext(el) { const a = byId(S.agents, el.dataset.id); if (a.session.cur < a.session.steps.length - 1) { a.session.cur++; a.log.unshift({ t: Date.now(), x: 'Started: ' + a.session.steps[a.session.cur] }); } save(); render(); },
   stepBack(el) { const a = byId(S.agents, el.dataset.id); if (a.session.cur > 0) a.session.cur--; save(); render(); },
-  taskAct(el) { const t = byId(S.tasks, el.dataset.id); t.state = t.state === 'running' ? 'paused' : 'running'; if (t.note && t.state === 'running') t.note = 'retrying'; save(); render(); },
-  delTask(el) { S.tasks = S.tasks.filter(t => t.id !== el.dataset.id); save(); render(); },
+  taskAct(el) {
+    const t = byId(S.tasks, el.dataset.id);
+    if (t.ref) {
+      if (t.state === 'waiting') { location.hash = '#stack'; return; }
+      if (t.state === 'failed' || t.state === 'stopped') { if (!runnerOn()) return toast('Turn on the AI runner in Settings to retry.'); S.tasks = S.tasks.filter(x => x !== t); save(); render(); return startRun(t.who, t.name); }
+      return controlRun(t, t.state === 'paused' ? 'resume' : 'pause');
+    }
+    t.state = t.state === 'running' ? 'paused' : 'running'; if (t.note && t.state === 'running') t.note = 'retrying'; save(); render();
+  },
+  delTask(el) {
+    const t = byId(S.tasks, el.dataset.id);
+    if (t.ref && ACTIVE_TASK.includes(t.state)) { if (confirm('Stop “' + t.name + '”?')) controlRun(t, 'stop'); return; }
+    S.tasks = S.tasks.filter(x => x !== t); save(); render();
+  },
   delQueue(el) { S.queue = S.queue.filter(q => q.id !== el.dataset.id); save(); render(); },
   delDecision(el) { S.decisions = S.decisions.filter(d => d.id !== el.dataset.id); save(); render(); },
   toggleMeeting(el) { ui.meetingOpen = ui.meetingOpen === el.dataset.id ? '' : el.dataset.id; render(); },
@@ -933,7 +994,9 @@ const C = {
   setSubs(el) { S.youtube.subs = Math.max(0, parseInt(el.value, 10) || 0); save(); render(); },
   ideaDate(el) { byId(S.youtube.ideas, el.dataset.id).date = el.value; save(); render(); },
   agentSpecialist(el) { const a = byId(S.agents, el.dataset.id); a.specialist = el.checked; log('You', `${el.checked ? 'made' : 'removed'} ${a.name} ${el.checked ? 'a' : 'as a'} specialist`); save(); render(); },
-  stackToggle(el) { S.stackOff[el.dataset.id] = !el.checked; save(); render(); }
+  stackToggle(el) { S.stackOff[el.dataset.id] = !el.checked; save(); render(); },
+  runProvider(el) { const f = fields($('#settingsForm')); ui.runModels[ui.lastProvider] = f.runModel.value; f.runModel.value = ui.runModels[el.value] || ''; updateRunnerFields(); },
+  setPolicy(el) { S.settings.policies = { ...(S.settings.policies || {}), [el.dataset.id]: el.value }; S.actionLog.unshift({ t: Date.now(), outcome: el.value, who: 'You', what: `set the rule for “${el.dataset.title}” to ${el.value}` }); save(); render(); }
 };
 const F = {
   addPriority(f) { const t = f.text.value.trim(); if (!t) return; S.priorities.push({ id: uid(), text: t, tag: f.tag.value, done: false }); save(); render(); $('#newPriority')?.focus(); },
@@ -941,7 +1004,8 @@ const F = {
   saveProject(f) { const p = byId(S.projects, f.dataset.id); p.title = f.title.value.trim(); p.desc = f.desc.value.trim(); p.priority = f.priority.value; ui.editingProject = null; save(); render(); },
   addMilestone(f) { const t = f.label.value.trim(); if (!t) return; byId(S.phases, f.dataset.phase).ms.push({ id: uid(), label: t, done: false }); save(); render(); },
   sendTask(f) { const t = f.text.value.trim(); if (!t) return; const a = byId(S.agents, f.dataset.id); a.log.unshift({ t: Date.now(), x: 'Task received: ' + t }); a.last = Date.now(); if (a.status === 'Offline') a.status = 'Busy'; if (!a.session) a.session = { url: 'about:blank', title: 'Working on: ' + t, target: 'starting', block: 0, steps: [t], cur: 0 };
-    log('You', `sent ${a.name} a task: ${t}`); S.actionLog.unshift({ t: Date.now(), outcome: 'ALLOW', who: a.name, what: 'accepted task: ' + t }); save(); render(); },
+    log('You', `sent ${a.name} a task: ${t}`); S.actionLog.unshift({ t: Date.now(), outcome: 'ALLOW', who: a.name, what: 'accepted task: ' + t }); save(); render();
+    if (runnerOn()) { ui.paused[a.id] = false; startRun(a.name, t); } else if (SERVER && !ui.runnerHint) { ui.runnerHint = true; toast('Logged for ' + a.name + '. To have AI do the work, turn on the AI runner in Settings.'); } },
   addTask(f) { const t = f.name.value.trim(); if (!t) return; const a = byId(S.agents, ui.agent); S.tasks.unshift({ id: uid(), name: t, who: a.name, state: 'running' }); save(); render(); },
   addQueue(f) { const t = f.text.value.trim(); if (!t) return; S.queue.push({ id: uid(), to: byId(S.agents, ui.agent).name, text: t }); save(); render(); },
   addDecision(f) { S.decisions.unshift({ id: uid(), date: Date.now(), q: f.q.value.trim(), d: f.d.value.trim(), who: f.who.value.trim() || '—' }); save(); render(); },
@@ -960,6 +1024,25 @@ const I = {
 };
 
 /* ---------- events ---------- */
+/* ---------- AI runner settings ---------- */
+async function loadRunnerInfo() {
+  if (!SERVER) return null;
+  try { const r = await fetch('/api/runner', { cache: 'no-store' }); if (r.ok) ui.runner = await r.json(); } catch (e) {}
+  return ui.runner;
+}
+function updateRunnerFields() {
+  const f = fields($('#settingsForm')), p = f.runProvider.value, info = ui.runner, d = (info && info.defaults) || {};
+  ui.lastProvider = p;
+  f.runModel.disabled = p === 'off'; f.runModel.placeholder = p === 'claude' ? (d.claude ? d.claude.model : 'claude-opus-5-5') : p === 'local' ? (d.local ? d.local.model : 'llama3.2') : '';
+  f.runUrl.placeholder = d.local ? d.local.url : 'http://localhost:11434/v1';
+  $('#runUrlField').hidden = p !== 'local';
+  const note = $('#runnerNote');
+  note.textContent = !SERVER ? 'The AI runner needs Mission Control running on this computer (start.bat / start.sh).'
+    : p === 'off' ? 'Tasks you send are logged for agents that connect on their own (MCP or /api/events).'
+    : p === 'claude' ? (!info ? 'Checking…' : !info.claudeSdk ? 'One-time setup: in the Mission Control folder run “npm install”, then restart it.' : (info.claudeKeyInEnv ? 'Uses ANTHROPIC_API_KEY from the environment.' : 'Set ANTHROPIC_API_KEY (or run “ant auth login”) before starting Mission Control.') + ' Billed to your Anthropic account.')
+    : 'Runs on your computer. Pick a model that supports tool calling (e.g. llama3.2, qwen2.5) so it can use your rules-checked tools.';
+}
+
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (!el || !A[el.dataset.act]) return; A[el.dataset.act](el, e); });
 document.addEventListener('change', e => { const el = e.target.closest('[data-change]'); if (el && C[el.dataset.change]) C[el.dataset.change](el, e); });
 document.addEventListener('input', e => { const el = e.target.closest('[data-input]'); if (el && I[el.dataset.input]) I[el.dataset.input](el, e); });
@@ -1032,7 +1115,9 @@ async function boot() {
     else await pushState(); // first run: this computer gets the data you see now
     setStatus('Saved to this computer');
     await pollEvents();
-    setInterval(pollEvents, 5000);
+    loadRunnerInfo().then(() => { if (route() === 'stack' && safeToRender()) render(); });
+    // Check for updates every 5 seconds, or every 1.5 seconds while the AI runner is working on something.
+    (function loop() { setTimeout(async () => { await pollEvents(); loop(); }, S.tasks.some(t => t.ref && ACTIVE_TASK.includes(t.state)) ? 1500 : 5000); })();
   } catch (e) { SERVER = false; setStatus('Saved in this browser'); }
 }
 boot();
